@@ -1,0 +1,1448 @@
+<?php
+// index.php - Главная страница АкваСбор с полной интеграцией админки
+require_once 'functions.php';
+
+// Инициализация
+initSession();
+$ai = getAquaAI();
+
+// Загружаем настройки сайта из админки
+$settings = getSiteSettings();
+
+// Данные для главной страницы
+$categories = getCategoriesWithCount();
+$featuredProducts = getFeaturedProducts(24);
+$cartCount = getCartCount();
+$favoritesCount = getFavoritesCount();
+
+// Настройки по умолчанию, если не установлены в админке
+$defaultSettings = [
+    'site_name' => 'АкваСбор',
+    'site_description' => 'Интернет-магазин аквариумных товаров с ИИ помощником',
+    'contact_phone' => '+7 (000) 000-00-00',
+    'contact_email' => 'info@akvasbor.ru',
+    'logo_main' => '',
+    'primary_color' => '#10b981',
+    'secondary_color' => '#f59e0b',
+    'accent_color' => '#059669',
+    'theme_color' => '#10b981',
+    'font_family' => 'Inter',
+    'slider_images' => [],
+    'footer_text' => 'Интернет-магазин аквариумных товаров с ИИ помощником',
+    'show_ai_chat' => true,
+    'delivery_text' => 'Бесплатная доставка от 3000₽',
+    'work_hours' => 'Ежедневно с 9:00 до 21:00',
+    'custom_css' => '',
+    'custom_js' => '',
+    'meta_title_template' => '{site_name} - {site_description}',
+    'google_analytics' => '',
+    'yandex_metrica' => '',
+    'facebook_pixel' => ''
+];
+
+// Объединяем с настройками из админки
+$settings = array_merge($defaultSettings, $settings);
+
+$pageTitle = str_replace(['{site_name}', '{title}'], [$settings['site_name'], 'Главная'], $settings['meta_title_template']);
+?>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars($pageTitle); ?></title>
+    <meta name="description" content="<?php echo htmlspecialchars($settings['site_description']); ?>">
+
+    <!-- Favicon -->
+    <?php if (!empty($settings['favicon'])): ?>
+    <link rel="icon" type="image/x-icon" href="<?php echo htmlspecialchars($settings['favicon']); ?>">
+    <?php endif; ?>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=<?php echo urlencode($settings['font_family']); ?>:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css">
+
+    <!-- Analytics -->
+    <?php if (!empty($settings['google_analytics'])): ?>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=<?php echo htmlspecialchars($settings['google_analytics']); ?>"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '<?php echo htmlspecialchars($settings['google_analytics']); ?>');
+    </script>
+    <?php endif; ?>
+
+    <?php if (!empty($settings['yandex_metrica'])): ?>
+    <script type="text/javascript">
+       (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+       m[i].l=1*new Date();k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+       (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+       ym(<?php echo htmlspecialchars($settings['yandex_metrica']); ?>, "init", {
+            clickmap:true,
+            trackLinks:true,
+            accurateTrackBounce:true,
+            webvisor:true
+       });
+    </script>
+    <?php endif; ?>
+
+    <?php if (!empty($settings['facebook_pixel'])): ?>
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '<?php echo htmlspecialchars($settings['facebook_pixel']); ?>');
+      fbq('track', 'PageView');
+    </script>
+    <?php endif; ?>
+
+    <style>
+        /* CSS Variables from admin settings */
+        :root {
+            --primary-color: <?php echo $settings['theme_color']; ?>;
+            --secondary-color: <?php echo $settings['secondary_color']; ?>;
+            --accent-color: <?php echo $settings['accent_color']; ?>;
+            --primary-dark: <?php echo adjustBrightness($settings['theme_color'], -20); ?>;
+            --secondary-dark: <?php echo adjustBrightness($settings['secondary_color'], -20); ?>;
+            --accent-light: <?php echo adjustBrightness($settings['accent_color'], 20); ?>;
+
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+
+            --white: #ffffff;
+            --black: #000000;
+            --red: #ef4444;
+            --blue: #3b82f6;
+
+            --font-family: '<?php echo $settings['font_family']; ?>', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --radius: 8px;
+            --radius-lg: 12px;
+            --radius-xl: 16px;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+            --transition: all 0.2s ease-in-out;
+        }
+
+        /* Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            font-family: var(--font-family);
+            font-size: 14px;
+            color: var(--gray-900);
+            background: var(--gray-50);
+            line-height: 1.5;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .header-top {
+            background: rgba(0,0,0,0.1);
+            padding: 6px 0;
+            font-size: 12px;
+            color: rgba(255,255,255,0.9);
+        }
+
+        .header-top-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-top-left {
+            display: flex;
+            gap: 24px;
+        }
+
+        .header-top-right {
+            display: flex;
+            gap: 16px;
+        }
+
+        .header-main {
+            padding: 16px 0;
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 16px;
+            display: grid;
+            grid-template-columns: 240px 180px 1fr auto auto;
+            gap: 20px;
+            align-items: center;
+        }
+
+        /* Logo */
+        .logo {
+            color: white;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-image {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-lg);
+            object-fit: cover;
+        }
+
+        .logo-text {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo-name {
+            font-size: 22px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .logo-tagline {
+            font-size: 11px;
+            opacity: 0.8;
+            line-height: 1;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(255,255,255,0.2);
+            border-radius: var(--radius-lg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: white;
+        }
+
+        /* Catalog button */
+        .catalog-btn {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+
+        .catalog-btn:hover {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.3);
+        }
+
+        /* Search */
+        .search-container {
+            position: relative;
+        }
+
+        .search-form {
+            display: flex;
+            background: white;
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            border: 2px solid transparent;
+            transition: var(--transition);
+        }
+
+        .search-form:focus-within {
+            border-color: var(--secondary-color);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .search-input {
+            flex: 1;
+            border: none;
+            padding: 14px 16px;
+            font-size: 14px;
+            outline: none;
+            background: transparent;
+        }
+
+        .search-input::placeholder {
+            color: var(--gray-400);
+        }
+
+        .ai-btn, .search-btn {
+            border: none;
+            padding: 14px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .ai-btn {
+            background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+            color: white;
+        }
+
+        .ai-btn:hover {
+            background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+        }
+
+        .search-btn {
+            background: var(--secondary-color);
+            color: white;
+        }
+
+        .search-btn:hover {
+            background: var(--secondary-dark);
+        }
+
+        /* User actions */
+        .user-actions {
+            display: flex;
+            gap: 24px;
+            color: white;
+        }
+
+        .user-action {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-decoration: none;
+            color: white;
+            transition: var(--transition);
+            position: relative;
+            padding: 4px 8px;
+            border-radius: var(--radius);
+        }
+
+        .user-action:hover {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .user-action i {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .user-action span {
+            font-size: 11px;
+            line-height: 1;
+        }
+
+        .action-count {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: var(--red);
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        /* Main content */
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 16px;
+        }
+
+        /* Hero slider */
+        .hero-section {
+            margin: 24px 0;
+        }
+
+        .hero-slider {
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            box-shadow: var(--shadow-lg);
+            height: 320px;
+        }
+
+        .swiper-slide {
+            position: relative;
+            display: flex;
+            align-items: center;
+            padding: 60px;
+            color: white;
+            background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+        }
+
+        .slide-content {
+            max-width: 50%;
+            z-index: 2;
+        }
+
+        .slide-title {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            line-height: 1.2;
+        }
+
+        .slide-description {
+            font-size: 18px;
+            margin-bottom: 32px;
+            line-height: 1.5;
+            opacity: 0.95;
+        }
+
+        .slide-btn {
+            background: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: var(--radius);
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .slide-btn:hover {
+            background: var(--secondary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .slide-image {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 50%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            opacity: 0.1;
+        }
+
+        /* Admin panel link */
+        .admin-link {
+            position: fixed;
+            bottom: 80px;
+            right: 24px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 500;
+            box-shadow: var(--shadow-xl);
+            transition: var(--transition);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+
+        .admin-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(102, 126, 234, 0.4);
+            color: white;
+            text-decoration: none;
+        }
+
+        /* Features, Categories, Products - используем те же стили что были */
+        .features-section { margin: 32px 0; }
+        .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .feature-card {
+            background: white; padding: 24px; border-radius: var(--radius-lg); text-align: center;
+            box-shadow: var(--shadow); transition: var(--transition); cursor: pointer; text-decoration: none; color: inherit;
+        }
+        .feature-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+        .feature-icon { width: 64px; height: 64px; margin: 0 auto 16px; border-radius: var(--radius-lg);
+            display: flex; align-items: center; justify-content: center; font-size: 24px; color: white;
+        }
+        .feature-icon.constructor { background: linear-gradient(135deg, var(--primary-color), var(--accent-color)); }
+        .feature-icon.library { background: linear-gradient(135deg, var(--secondary-color), #f97316); }
+        .feature-icon.ai { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+        .feature-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+        .feature-description { color: var(--gray-600); font-size: 14px; line-height: 1.4; }
+
+        .section { margin: 48px 0; }
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .section-title { font-size: 28px; font-weight: 700; color: var(--gray-900); }
+        .view-all {
+            color: var(--primary-color); text-decoration: none; font-weight: 500; font-size: 14px;
+            display: flex; align-items: center; gap: 4px; transition: var(--transition);
+        }
+        .view-all:hover { color: var(--primary-dark); }
+
+        .categories-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+        .category-card {
+            background: white; padding: 24px; border-radius: var(--radius-lg); text-align: center;
+            text-decoration: none; color: var(--gray-900); box-shadow: var(--shadow); transition: var(--transition);
+        }
+        .category-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-xl); }
+        .category-icon { 
+            width: 72px; height: 72px; margin: 0 auto 20px; border-radius: var(--radius-lg);
+            display: flex; align-items: center; justify-content: center; font-size: 32px; color: white;
+        }
+        .category-icon.plants { background: linear-gradient(135deg, var(--primary-color), var(--accent-color)); }
+        .category-icon.fish { background: linear-gradient(135deg, #3b82f6, #60a5fa); }
+        .category-icon.equipment { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+        .category-icon.decoration { background: linear-gradient(135deg, var(--secondary-color), #f97316); }
+        .category-name { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+        .category-count { color: var(--gray-500); font-size: 14px; }
+
+        .products-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+        .product-card {
+            background: white; border-radius: var(--radius-lg); overflow: hidden; position: relative;
+            cursor: pointer; transition: var(--transition); box-shadow: var(--shadow);
+        }
+        .product-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+        .product-image { width: 100%; height: 200px; position: relative; overflow: hidden; background: var(--gray-100); }
+        .product-image img { width: 100%; height: 100%; object-fit: cover; transition: var(--transition); }
+        .product-card:hover .product-image img { transform: scale(1.05); }
+        .product-placeholder {
+            width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+            color: var(--gray-400); font-size: 48px;
+        }
+        .product-badges {
+            position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 2;
+        }
+        .product-badge {
+            padding: 4px 8px; border-radius: var(--radius); font-size: 10px; font-weight: 600;
+            color: white; text-align: center;
+        }
+        .badge-ai { background: linear-gradient(135deg, #8b5cf6, #a78bfa); }
+        .badge-discount { background: var(--red); }
+        .badge-new { background: var(--primary-color); }
+        .product-actions {
+            position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px;
+            opacity: 0; transition: var(--transition); z-index: 2;
+        }
+        .product-card:hover .product-actions { opacity: 1; }
+        .action-btn {
+            width: 36px; height: 36px; border-radius: 50%; border: none; background: rgba(255,255,255,0.9);
+            color: var(--gray-600); cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: var(--transition); box-shadow: var(--shadow); backdrop-filter: blur(10px);
+        }
+        .action-btn:hover { background: white; color: var(--primary-color); transform: scale(1.1); }
+        .action-btn.active { background: var(--red); color: white; }
+        .product-info { padding: 16px; }
+        .product-rating { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+        .rating-stars { color: #fbbf24; font-size: 12px; }
+        .rating-value { font-size: 12px; color: var(--gray-500); }
+        .product-name {
+            font-size: 14px; line-height: 1.4; margin-bottom: 12px; display: -webkit-box;
+            -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 500;
+        }
+        .product-price { margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .price-current { font-size: 18px; font-weight: 700; color: var(--gray-900); }
+        .price-old { font-size: 14px; color: var(--gray-400); text-decoration: line-through; }
+        .price-discount {
+            background: var(--red); color: white; padding: 2px 6px; border-radius: var(--radius);
+            font-size: 10px; font-weight: 600;
+        }
+        .delivery-info {
+            color: var(--primary-color); font-size: 12px; font-weight: 500; margin-bottom: 12px;
+            display: flex; align-items: center; gap: 4px;
+        }
+        .add-to-cart {
+            width: 100%; background: var(--primary-color); color: white; border: none; padding: 10px;
+            border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer;
+            transition: var(--transition); display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+        .add-to-cart:hover { background: var(--primary-dark); transform: translateY(-1px); }
+        .add-to-cart:active { transform: translateY(0); }
+
+        /* AI Chat FAB */
+        .ai-chat-fab {
+            position: fixed; bottom: 24px; right: 24px; width: 64px; height: 64px; border-radius: 50%;
+            background: linear-gradient(135deg, #8b5cf6, #a78bfa); color: white; border: none;
+            cursor: pointer; font-size: 28px; box-shadow: var(--shadow-xl); z-index: 1000;
+            transition: var(--transition); animation: pulse 3s infinite;
+        }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .ai-chat-fab:hover { transform: scale(1.1); animation: none; }
+        .ai-notification {
+            position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; background: var(--red);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 600; border: 2px solid white;
+        }
+
+        /* Footer */
+        .footer {
+            background: var(--gray-900); color: white; padding: 60px 0 40px; margin-top: 80px;
+        }
+        .footer-content {
+            max-width: 1200px; margin: 0 auto; padding: 0 16px; display: grid;
+            grid-template-columns: repeat(4, 1fr); gap: 48px;
+        }
+        .footer-section h3 { margin-bottom: 24px; font-size: 18px; color: white; }
+        .footer-section ul { list-style: none; }
+        .footer-section li { margin-bottom: 12px; }
+        .footer-section a { color: var(--gray-400); text-decoration: none; transition: var(--transition); }
+        .footer-section a:hover { color: white; }
+        .footer-bottom {
+            border-top: 1px solid var(--gray-700); margin-top: 48px; padding-top: 24px;
+            text-align: center; color: var(--gray-400);
+        }
+
+        /* Cart sidebar - используем те же стили */
+        .cart-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);
+            z-index: 2000; opacity: 0; visibility: hidden; transition: var(--transition);
+        }
+        .cart-overlay.show { opacity: 1; visibility: visible; }
+        .cart-sidebar {
+            position: fixed; top: 0; right: 0; width: 420px; height: 100%; background: white; z-index: 2001;
+            transform: translateX(100%); transition: var(--transition); display: flex; flex-direction: column;
+            box-shadow: var(--shadow-xl);
+        }
+        .cart-sidebar.show { transform: translateX(0); }
+        .cart-header {
+            padding: 24px; border-bottom: 1px solid var(--gray-200); display: flex;
+            justify-content: space-between; align-items: center; background: var(--gray-50);
+        }
+        .cart-title { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .cart-close {
+            width: 36px; height: 36px; border: none; background: var(--gray-100); cursor: pointer;
+            border-radius: 50%; color: var(--gray-500); transition: var(--transition);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .cart-close:hover { background: var(--gray-200); }
+        .cart-content { flex: 1; overflow-y: auto; padding: 24px; }
+        .cart-footer {
+            padding: 24px; border-top: 1px solid var(--gray-200); background: var(--gray-50);
+        }
+        .cart-total {
+            font-size: 24px; font-weight: 700; margin-bottom: 20px; text-align: center;
+            color: var(--gray-900);
+        }
+        .checkout-btn {
+            width: 100%; background: var(--primary-color); color: white; border: none; padding: 16px;
+            border-radius: var(--radius); font-size: 16px; font-weight: 600; cursor: pointer;
+            transition: var(--transition);
+        }
+        .checkout-btn:hover { background: var(--primary-dark); }
+        .checkout-btn:disabled { background: var(--gray-300); cursor: not-allowed; }
+
+        /* Empty states */
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--gray-500); }
+        .empty-state i { font-size: 48px; margin-bottom: 16px; color: var(--gray-400); }
+        .empty-state h3 { font-size: 20px; margin-bottom: 8px; }
+        .loading { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--gray-500); gap: 12px; }
+
+        /* Notification styles */
+        .notification {
+            position: fixed; top: 20px; right: 20px; background: var(--primary-color); color: white;
+            padding: 16px 20px; border-radius: var(--radius); box-shadow: var(--shadow-lg); z-index: 9999;
+            display: flex; align-items: center; gap: 8px; font-weight: 500; transform: translateX(100%);
+            transition: var(--transition);
+        }
+        .notification.show { transform: translateX(0); }
+        .notification.success { background: var(--primary-color); }
+        .notification.error { background: var(--red); }
+        .notification.warning { background: var(--secondary-color); }
+        .notification.info { background: var(--blue); }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .products-grid { grid-template-columns: repeat(4, 1fr); }
+            .header-content { grid-template-columns: auto 1fr auto auto; gap: 16px; }
+            .catalog-btn { display: none; }
+        }
+        @media (max-width: 768px) {
+            .products-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            .categories-grid { grid-template-columns: repeat(2, 1fr); }
+            .features-grid { grid-template-columns: 1fr; }
+            .header-content { grid-template-columns: auto 1fr auto; gap: 12px; }
+            .user-actions { gap: 16px; }
+            .cart-sidebar { width: 100%; }
+            .slide-content { max-width: 100%; }
+            .slide-title { font-size: 28px; }
+            .footer-content { grid-template-columns: repeat(2, 1fr); gap: 32px; }
+        }
+        @media (max-width: 480px) {
+            .products-grid { grid-template-columns: 1fr; }
+            .categories-grid { grid-template-columns: 1fr; }
+            .header-content { grid-template-columns: 1fr; gap: 12px; }
+            .search-container { order: 2; }
+            .user-actions { order: 1; justify-self: end; }
+            .logo { order: 0; justify-self: start; }
+            .footer-content { grid-template-columns: 1fr; gap: 24px; }
+        }
+
+        /* Utilities */
+        .hidden { display: none !important; }
+        .loading { opacity: 0.6; }
+
+        /* Custom styles from admin panel */
+        <?php if (!empty($settings['custom_css'])): ?>
+        <?php echo $settings['custom_css']; ?>
+        <?php endif; ?>
+    </style>
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-top">
+            <div class="header-top-content">
+                <div class="header-top-left">
+                    <span><i class="fas fa-truck"></i> <?php echo htmlspecialchars($settings['delivery_text']); ?></span>
+                    <span><i class="fas fa-phone"></i> <?php echo htmlspecialchars($settings['contact_phone']); ?></span>
+                </div>
+                <div class="header-top-right">
+                    <span>Для бизнеса</span>
+                    <span>Помощь</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="header-main">
+            <div class="header-content">
+                <!-- Logo -->
+                <a href="/" class="logo">
+                    <?php if (!empty($settings['logo_main']) && file_exists($settings['logo_main'])): ?>
+                        <img src="<?php echo htmlspecialchars($settings['logo_main']); ?>" alt="<?php echo htmlspecialchars($settings['site_name']); ?>" class="logo-image">
+                    <?php else: ?>
+                        <div class="logo-icon">
+                            <i class="fas fa-fish"></i>
+                        </div>
+                    <?php endif; ?>
+                    <div class="logo-text">
+                        <div class="logo-name"><?php echo htmlspecialchars($settings['site_name']); ?></div>
+                        <div class="logo-tagline">с ИИ помощником</div>
+                    </div>
+                </a>
+
+                <!-- Catalog Button -->
+                <button class="catalog-btn" id="catalogBtn">
+                    <i class="fas fa-bars"></i>
+                    Каталог
+                </button>
+
+                <!-- Search -->
+                <div class="search-container">
+                    <form class="search-form" onsubmit="performSearch(event)">
+                        <input type="text" class="search-input" placeholder="Найти товары или спросить у ИИ..." id="searchInput" autocomplete="off">
+                        <button type="button" class="ai-btn" onclick="openAISearch()" title="ИИ помощник">
+                            <i class="fas fa-brain"></i>
+                            ИИ
+                        </button>
+                        <button type="submit" class="search-btn">
+                            <i class="fas fa-search"></i>
+                            Найти
+                        </button>
+                    </form>
+                </div>
+
+                <!-- User Actions -->
+                <a href="/favorites" class="user-action" title="Избранное">
+                    <i class="fas fa-heart"></i>
+                    <span>Избранное</span>
+                    <?php if ($favoritesCount > 0): ?>
+                        <div class="action-count"><?php echo $favoritesCount; ?></div>
+                    <?php endif; ?>
+                </a>
+
+                <a href="#" class="user-action" onclick="toggleCart()" title="Корзина">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span>Корзина</span>
+                    <div class="action-count" id="cartCount" style="<?php echo $cartCount > 0 ? '' : 'display:none'; ?>">
+                        <?php echo $cartCount; ?>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Hero Slider -->
+        <section class="hero-section">
+            <div class="hero-slider">
+                <div class="swiper">
+                    <div class="swiper-wrapper">
+                        <?php 
+                        $sliderImages = $settings['slider_images'] ?? [];
+                        if (empty($sliderImages)) {
+                            // Default slides
+                            $sliderImages = [
+                                [
+                                    'title' => 'Создайте идеальный аквариум с ИИ помощником',
+                                    'description' => 'Умный консультант подберет растения, рыбок и оборудование специально для вашего аквариума',
+                                    'button_text' => 'Получить рекомендации ИИ',
+                                    'button_action' => 'openAIChat()',
+                                    'image' => ''
+                                ],
+                                [
+                                    'title' => 'Администрирование сайта',
+                                    'description' => 'Управляйте товарами, заказами и настройками через удобную админ панель',
+                                    'button_text' => 'Открыть админ панель',
+                                    'button_action' => "location.href='admin/'",
+                                    'image' => ''
+                                ],
+                                [
+                                    'title' => 'Библиотека растений',
+                                    'description' => 'Изучите характеристики и требования к содержанию аквариумных растений',
+                                    'button_text' => 'Изучить растения',
+                                    'button_action' => "location.href='/plant-library'",
+                                    'image' => ''
+                                ]
+                            ];
+                        }
+
+                        foreach ($sliderImages as $slide): ?>
+                            <div class="swiper-slide">
+                                <div class="slide-content">
+                                    <h1 class="slide-title"><?php echo htmlspecialchars($slide['title']); ?></h1>
+                                    <p class="slide-description"><?php echo htmlspecialchars($slide['description']); ?></p>
+                                    <button class="slide-btn" onclick="<?php echo htmlspecialchars($slide['button_action']); ?>">
+                                        <i class="fas fa-brain"></i>
+                                        <?php echo htmlspecialchars($slide['button_text']); ?>
+                                    </button>
+                                </div>
+                                <?php if (!empty($slide['image']) && file_exists($slide['image'])): ?>
+                                    <div class="slide-image" style="background-image: url('<?php echo htmlspecialchars($slide['image']); ?>')"></div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <!-- Navigation -->
+                    <div class="swiper-pagination"></div>
+                    <div class="swiper-button-next"></div>
+                    <div class="swiper-button-prev"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="features-section">
+            <div class="features-grid">
+                <a href="/plant-constructor" class="feature-card">
+                    <div class="feature-icon constructor">
+                        <i class="fas fa-seedling"></i>
+                    </div>
+                    <div class="feature-title">Конструктор наборов</div>
+                    <div class="feature-description">Подберите совместимые растения для вашего аквариума</div>
+                </a>
+
+                <a href="/plant-library" class="feature-card">
+                    <div class="feature-icon library">
+                        <i class="fas fa-book"></i>
+                    </div>
+                    <div class="feature-title">Библиотека растений</div>
+                    <div class="feature-description">Изучите характеристики и требования к содержанию</div>
+                </a>
+
+                <div class="feature-card" onclick="openAIChat()">
+                    <div class="feature-icon ai">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="feature-title">ИИ Консультант</div>
+                    <div class="feature-description">Получите персональные рекомендации от нашего ИИ</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Categories -->
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">Популярные категории</h2>
+                <a href="/catalog" class="view-all">
+                    Весь каталог
+                    <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+
+            <div class="categories-grid">
+                <?php foreach ($categories as $category): ?>
+                    <a href="/category/<?php echo htmlspecialchars($category['slug'] ?? ''); ?>" class="category-card">
+                        <div class="category-icon <?php echo $category['slug'] ?? ''; ?>">
+                            <?php
+                            $icons = [
+                                'plants' => 'fa-leaf',
+                                'fish' => 'fa-fish', 
+                                'equipment' => 'fa-cogs',
+                                'decoration' => 'fa-chess-rook'
+                            ];
+                            echo '<i class="fas ' . ($icons[$category['slug']] ?? 'fa-circle') . '"></i>';
+                            ?>
+                        </div>
+                        <div class="category-name"><?php echo htmlspecialchars($category['name']); ?></div>
+                        <div class="category-count"><?php echo $category['products_count'] ?? 0; ?> товаров</div>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </section>
+
+        <!-- Products -->
+        <section class="section">
+            <div class="section-header">
+                <h2 class="section-title">Рекомендуем для вас</h2>
+                <a href="/products" class="view-all">
+                    Смотреть все
+                    <i class="fas fa-arrow-right"></i>
+                </a>
+            </div>
+
+            <?php if (!empty($featuredProducts)): ?>
+                <div class="products-grid">
+                    <?php foreach ($featuredProducts as $product): 
+                        $rating = getProductRating($product['id']);
+                        $hasDiscount = !empty($product['old_price']) && $product['old_price'] > $product['price'];
+                        $discountPercent = $hasDiscount ? round((($product['old_price'] - $product['price']) / $product['old_price']) * 100) : 0;
+                    ?>
+                        <div class="product-card" data-id="<?php echo htmlspecialchars($product['id']); ?>">
+                            <div class="product-image">
+                                <?php if (!empty($product['image']) && file_exists($product['image'])): ?>
+                                    <img src="<?php echo htmlspecialchars($product['image']); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>" loading="lazy">
+                                <?php else: ?>
+                                    <div class="product-placeholder">
+                                        <i class="fas fa-image"></i>
+                                    </div>
+                                <?php endif; ?>
+
+                                <div class="product-badges">
+                                    <div class="product-badge badge-ai">ИИ рекомендует</div>
+                                    <?php if ($hasDiscount): ?>
+                                        <div class="product-badge badge-discount">-<?php echo $discountPercent; ?>%</div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div class="product-actions">
+                                    <button class="action-btn <?php echo isInFavorites($product['id']) ? 'active' : ''; ?>" 
+                                            onclick="toggleFavorite('<?php echo $product['id']; ?>')" 
+                                            title="В избранное">
+                                        <i class="<?php echo isInFavorites($product['id']) ? 'fas' : 'far'; ?> fa-heart"></i>
+                                    </button>
+                                    <button class="action-btn" onclick="quickView('<?php echo $product['id']; ?>')" title="Быстрый просмотр">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="product-info">
+                                <?php if ($rating['count'] > 0): ?>
+                                    <div class="product-rating">
+                                        <div class="rating-stars">
+                                            <?php
+                                            $fullStars = floor($rating['average']);
+                                            $hasHalf = ($rating['average'] - $fullStars) >= 0.5;
+                                            for ($i = 1; $i <= 5; $i++) {
+                                                if ($i <= $fullStars) {
+                                                    echo '<i class="fas fa-star"></i>';
+                                                } elseif ($i == $fullStars + 1 && $hasHalf) {
+                                                    echo '<i class="fas fa-star-half-alt"></i>';
+                                                } else {
+                                                    echo '<i class="far fa-star"></i>';
+                                                }
+                                            }
+                                            ?>
+                                        </div>
+                                        <span class="rating-value"><?php echo $rating['average']; ?> (<?php echo $rating['count']; ?>)</span>
+                                    </div>
+                                <?php endif; ?>
+
+                                <div class="product-name">
+                                    <a href="/product/<?php echo htmlspecialchars($product['id']); ?>" style="color: inherit; text-decoration: none;">
+                                        <?php echo htmlspecialchars($product['name']); ?>
+                                    </a>
+                                </div>
+
+                                <div class="product-price">
+                                    <span class="price-current"><?php echo formatPrice($product['price']); ?></span>
+                                    <?php if ($hasDiscount): ?>
+                                        <span class="price-old"><?php echo formatPrice($product['old_price']); ?></span>
+                                        <span class="price-discount">-<?php echo $discountPercent; ?>%</span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div class="delivery-info">
+                                    <i class="fas fa-truck"></i>
+                                    Завтра, бесплатно
+                                </div>
+
+                                <button class="add-to-cart" onclick="addToCart('<?php echo $product['id']; ?>')">
+                                    <i class="fas fa-cart-plus"></i>
+                                    В корзину
+                                </button>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php else: ?>
+                <div class="empty-state">
+                    <i class="fas fa-fish"></i>
+                    <h3>Товары скоро появятся</h3>
+                    <p>Наш ИИ уже работает над наполнением каталога лучшими товарами!</p>
+                    <p><a href="admin/" style="color: var(--primary-color);">Добавить товары через админ панель</a></p>
+                </div>
+            <?php endif; ?>
+        </section>
+    </main>
+
+    <!-- Admin Panel Link -->
+    <a href="admin/" class="admin-link" title="Административная панель">
+        <i class="fas fa-cog"></i>
+        Админ панель
+    </a>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3><?php echo htmlspecialchars($settings['site_name']); ?></h3>
+                <ul>
+                    <li><a href="/about">О нас</a></li>
+                    <li><a href="/news">Новости</a></li>
+                    <li><a href="/contacts">Контакты</a></li>
+                    <li><a href="/delivery">Доставка</a></li>
+                    <li><a href="/guarantees">Гарантии</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Каталог</h3>
+                <ul>
+                    <?php foreach ($categories as $category): ?>
+                        <li><a href="/category/<?php echo htmlspecialchars($category['slug']); ?>"><?php echo htmlspecialchars($category['name']); ?></a></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Сервисы</h3>
+                <ul>
+                    <li><a href="/plant-constructor">Конструктор наборов</a></li>
+                    <li><a href="/plant-library">Библиотека растений</a></li>
+                    <li><a href="/ai-consultant">ИИ Консультант</a></li>
+                    <li><a href="/reviews">Отзывы</a></li>
+                </ul>
+            </div>
+
+            <div class="footer-section">
+                <h3>Поддержка</h3>
+                <ul>
+                    <li><a href="tel:<?php echo str_replace([' ', '(', ')', '-'], '', $settings['contact_phone']); ?>"><?php echo htmlspecialchars($settings['contact_phone']); ?></a></li>
+                    <li><a href="mailto:<?php echo htmlspecialchars($settings['contact_email']); ?>"><?php echo htmlspecialchars($settings['contact_email']); ?></a></li>
+                    <li><?php echo htmlspecialchars($settings['work_hours']); ?></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="footer-bottom">
+            <p><?php echo htmlspecialchars($settings['footer_text']); ?></p>
+            <p>&copy; <?php echo date('Y'); ?> <?php echo htmlspecialchars($settings['site_name']); ?>. Все права защищены.</p>
+        </div>
+    </footer>
+
+    <!-- Cart Sidebar -->
+    <div class="cart-overlay" id="cartOverlay" onclick="toggleCart()"></div>
+    <div class="cart-sidebar" id="cartSidebar">
+        <div class="cart-header">
+            <div class="cart-title">
+                <i class="fas fa-shopping-cart"></i>
+                Корзина
+            </div>
+            <button class="cart-close" onclick="toggleCart()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="cart-content" id="cartContent">
+            <div class="loading">
+                <i class="fas fa-spinner fa-spin"></i>
+                Загрузка...
+            </div>
+        </div>
+        <div class="cart-footer">
+            <div class="cart-total" id="cartTotal">Итого: 0 ₽</div>
+            <button class="checkout-btn" onclick="goToCheckout()">
+                <i class="fas fa-credit-card"></i>
+                Оформить заказ
+            </button>
+        </div>
+    </div>
+
+    <!-- AI Chat FAB -->
+    <?php if ($settings['show_ai_chat']): ?>
+        <button class="ai-chat-fab" onclick="openAIChat()" title="ИИ Консультант">
+            <i class="fas fa-robot"></i>
+            <div class="ai-notification" id="aiNotification" style="display: none;">!</div>
+        </button>
+    <?php endif; ?>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        // Initialize Swiper
+        const swiper = new Swiper('.hero-slider .swiper', {
+            loop: true,
+            autoplay: {
+                delay: 5000,
+                disableOnInteraction: false,
+            },
+            pagination: {
+                el: '.swiper-pagination',
+                clickable: true,
+            },
+            navigation: {
+                nextEl: '.swiper-button-next',
+                prevEl: '.swiper-button-prev',
+            },
+            effect: 'slide',
+            speed: 800,
+        });
+
+        // Global functions
+        function performSearch(e) {
+            e.preventDefault();
+            const query = document.getElementById('searchInput').value.trim();
+            if (query) {
+                window.location.href = `/search?q=${encodeURIComponent(query)}`;
+            }
+        }
+
+        function openAISearch() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (query) {
+                openAIChat();
+                showNotification('ИИ анализирует ваш запрос...', 'info');
+            } else {
+                openAIChat();
+            }
+        }
+
+        function addToCart(productId) {
+            const button = event.target;
+            const originalText = button.innerHTML;
+
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Добавляем...';
+            button.disabled = true;
+
+            fetch('/api_cart.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=add&product_id=${productId}&quantity=1`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateCartCount();
+                    showNotification('Товар добавлен в корзину!', 'success');
+                    button.innerHTML = '<i class="fas fa-check"></i> Добавлено';
+                    setTimeout(() => {
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                    }, 2000);
+                } else {
+                    showNotification('Ошибка при добавлении товара', 'error');
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }
+            })
+            .catch(error => {
+                showNotification('Ошибка соединения', 'error');
+                button.innerHTML = originalText;
+                button.disabled = false;
+            });
+        }
+
+        function toggleFavorite(productId) {
+            const button = event.target.closest('.action-btn');
+            const icon = button.querySelector('i');
+
+            fetch('/api_favorites.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=toggle&product_id=${productId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const isAdded = data.action === 'added';
+                    icon.className = isAdded ? 'fas fa-heart' : 'far fa-heart';
+                    button.classList.toggle('active', isAdded);
+                    showNotification(data.message, 'success');
+                }
+            })
+            .catch(error => {
+                showNotification('Ошибка соединения', 'error');
+            });
+        }
+
+        function quickView(productId) {
+            showNotification('Быстрый просмотр скоро будет доступен!', 'info');
+        }
+
+        function toggleCart() {
+            const overlay = document.getElementById('cartOverlay');
+            const sidebar = document.getElementById('cartSidebar');
+
+            const isOpen = overlay.classList.contains('show');
+
+            if (isOpen) {
+                overlay.classList.remove('show');
+                sidebar.classList.remove('show');
+            } else {
+                overlay.classList.add('show');
+                sidebar.classList.add('show');
+                loadCartItems();
+            }
+        }
+
+        function loadCartItems() {
+            const content = document.getElementById('cartContent');
+            content.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> Загрузка...</div>';
+
+            fetch('/api_cart.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        renderCartItems(data.cart);
+                        updateCartTotal(data.cart.total || 0);
+                    } else {
+                        content.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><h3>Ошибка загрузки</h3></div>';
+                    }
+                })
+                .catch(error => {
+                    content.innerHTML = '<div class="empty-state"><i class="fas fa-wifi"></i><h3>Ошибка соединения</h3></div>';
+                });
+        }
+
+        function renderCartItems(cart) {
+            const content = document.getElementById('cartContent');
+
+            if (!cart.items || cart.items.length === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-shopping-cart"></i>
+                        <h3>Корзина пуста</h3>
+                        <p>Добавьте товары из каталога</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '<div class="cart-items">';
+            cart.items.forEach(item => {
+                html += `
+                    <div class="cart-item" style="display: flex; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--gray-200);">
+                        <div style="width: 60px; height: 60px; border-radius: var(--radius); background: var(--gray-100); display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                            ${item.image && item.image !== '' ? 
+                                `<img src="${item.image}" alt="${item.name}" style="width: 100%; height: 100%; object-fit: cover;">` : 
+                                '<i class="fas fa-image" style="color: var(--gray-400);"></i>'
+                            }
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 500; margin-bottom: 4px; font-size: 14px;">${item.name}</div>
+                            <div style="color: var(--primary-color); font-weight: 600;">${formatPrice(item.price)}</div>
+                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                                <button onclick="updateCartQuantity('${item.id}', ${item.quantity - 1})" 
+                                        style="width: 24px; height: 24px; border: 1px solid var(--gray-300); background: white; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center;">-</button>
+                                <span style="min-width: 20px; text-align: center; font-weight: 500;">${item.quantity}</span>
+                                <button onclick="updateCartQuantity('${item.id}', ${item.quantity + 1})" 
+                                        style="width: 24px; height: 24px; border: 1px solid var(--gray-300); background: white; border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center;">+</button>
+                            </div>
+                        </div>
+                        <button onclick="removeFromCart('${item.id}')" 
+                                style="color: var(--gray-400); border: none; background: none; cursor: pointer; padding: 4px;" 
+                                title="Удалить">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+            });
+            html += '</div>';
+
+            content.innerHTML = html;
+        }
+
+        function updateCartCount() {
+            fetch('/api_cart.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.cart) {
+                        const count = data.cart.count || 0;
+                        const countEl = document.getElementById('cartCount');
+
+                        if (count > 0) {
+                            countEl.textContent = count;
+                            countEl.style.display = 'flex';
+                        } else {
+                            countEl.style.display = 'none';
+                        }
+                    }
+                });
+        }
+
+        function updateCartTotal(total) {
+            document.getElementById('cartTotal').textContent = `Итого: ${formatPrice(total)}`;
+        }
+
+        function updateCartQuantity(productId, quantity) {
+            if (quantity < 1) {
+                removeFromCart(productId);
+                return;
+            }
+
+            fetch('/api_cart.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=update&product_id=${productId}&quantity=${quantity}`
+            })
+            .then(() => loadCartItems());
+        }
+
+        function removeFromCart(productId) {
+            fetch('/api_cart.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=remove&product_id=${productId}`
+            })
+            .then(() => {
+                loadCartItems();
+                updateCartCount();
+            });
+        }
+
+        function formatPrice(price) {
+            return new Intl.NumberFormat('ru-RU', {
+                style: 'currency',
+                currency: 'RUB',
+                minimumFractionDigits: 0
+            }).format(price || 0);
+        }
+
+        function openAIChat() {
+            showNotification('ИИ консультант скоро будет доступен!', 'info');
+        }
+
+        function goToCheckout() {
+            window.location.href = '/checkout';
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <i class="fas ${type === 'success' ? 'fa-check' : type === 'error' ? 'fa-exclamation-circle' : type === 'warning' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+                ${message}
+            `;
+
+            document.body.appendChild(notification);
+
+            setTimeout(() => notification.classList.add('show'), 100);
+
+            setTimeout(() => {
+                notification.classList.remove('show');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 АкваСбор загружен (интегрированная версия)');
+            updateCartCount();
+
+            // Show AI notification
+            setTimeout(() => {
+                const notification = document.getElementById('aiNotification');
+                if (notification) {
+                    notification.style.display = 'flex';
+                    setTimeout(() => {
+                        notification.style.display = 'none';
+                    }, 5000);
+                }
+            }, 3000);
+        });
+    </script>
+
+    <!-- Custom JS from admin panel -->
+    <?php if (!empty($settings['custom_js'])): ?>
+    <script>
+    <?php echo $settings['custom_js']; ?>
+    </script>
+    <?php endif; ?>
+</body>
+</html>
+
+<?php
+// Вспомогательная функция для изменения яркости цвета
+function adjustBrightness($hex, $percent) {
+    $hex = ltrim($hex, '#');
+
+    if (strlen($hex) === 3) {
+        $hex = str_repeat(substr($hex,0,1), 2).str_repeat(substr($hex,1,1), 2).str_repeat(substr($hex,2,1), 2);
+    }
+
+    $dec = hexdec($hex);
+    $rgb = [
+        ($dec >> 16) & 0xff,
+        ($dec >> 8) & 0xff,
+        $dec & 0xff
+    ];
+
+    foreach ($rgb as &$color) {
+        $color = max(0, min(255, $color + $percent * 255 / 100));
+    }
+
+    return sprintf("#%02x%02x%02x", $rgb[0], $rgb[1], $rgb[2]);
+}
+?>
