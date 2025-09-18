@@ -1,0 +1,397 @@
+<?php
+$categories = getCategories();
+
+// Обработка формы добавления товара
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
+    $productData = [
+        'name' => trim($_POST['name'] ?? ''),
+        'latin_name' => trim($_POST['latin_name'] ?? ''),
+        'price' => (float)($_POST['price'] ?? 0),
+        'description' => trim($_POST['description'] ?? ''),
+        'category_id' => (int)($_POST['category_id'] ?? 0),
+        'difficulty' => trim($_POST['difficulty'] ?? 'легко'),
+        'status' => 1
+    ];
+
+    if (addProduct($productData)) {
+        $success = "Товар успешно добавлен!";
+    } else {
+        $error = "Ошибка добавления товара";
+    }
+}
+?>
+
+<div class='d-flex justify-content-between align-items-center mb-4'>
+    <div>
+        <h1 class='mb-2'>🚀 МЕГА Создатель товара</h1>
+        <p class='text-muted mb-0'>Создай потрясающий товар с помощью ИИ помощника!</p>
+    </div>
+    <a href='?page=products' class='btn btn-outline-primary mega-btn'>
+        <i class='fas fa-arrow-left me-2'></i>К товарам
+    </a>
+</div>
+
+<?php if (isset($success)): ?>
+    <div class='alert alert-success alert-dismissible fade show'>
+        <i class='fas fa-check-circle me-2'></i><?= $success ?>
+        <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
+    </div>
+<?php endif; ?>
+
+<?php if (isset($error)): ?>
+    <div class='alert alert-danger alert-dismissible fade show'>
+        <i class='fas fa-exclamation-triangle me-2'></i><?= $error ?>
+        <button type='button' class='btn-close' data-bs-dismiss='alert'></button>
+    </div>
+<?php endif; ?>
+
+<div class='row'>
+    <!-- Форма товара -->
+    <div class='col-lg-8'>
+        <div class='mega-card'>
+            <div class='card-header bg-gradient-primary text-white'>
+                <h5 class='mb-0'>
+                    <i class='fas fa-plus-circle me-2'></i>Основная информация
+                </h5>
+            </div>
+            <div class='card-body p-4'>
+                <form method='POST' id='productForm'>
+                    <div class='row'>
+                        <div class='col-md-8 mb-3'>
+                            <label class='form-label fw-bold'>
+                                <i class='fas fa-tag me-1 text-primary'></i>Название товара *
+                            </label>
+                            <input type='text' class='form-control form-control-lg' name='name' id='productName' required placeholder='Например: Анубиас нана'>
+                        </div>
+                        <div class='col-md-4 mb-3'>
+                            <label class='form-label fw-bold'>
+                                <i class='fas fa-ruble-sign me-1 text-success'></i>Цена *
+                            </label>
+                            <div class='input-group'>
+                                <input type='number' class='form-control form-control-lg' name='price' id='productPrice' required min='0' step='0.01' placeholder='0'>
+                                <span class='input-group-text'>₽</span>
+                                <button type='button' class='btn btn-outline-warning' onclick='aiSuggestPrice()' title='ИИ предложит цену'>
+                                    <i class='fas fa-robot'></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class='mb-3'>
+                        <label class='form-label fw-bold'>
+                            <i class='fas fa-leaf me-1 text-info'></i>Латинское название
+                        </label>
+                        <input type='text' class='form-control' name='latin_name' placeholder='Anubias barteri var. nana'>
+                    </div>
+
+                    <div class='row'>
+                        <div class='col-md-6 mb-3'>
+                            <label class='form-label fw-bold'>
+                                <i class='fas fa-list me-1 text-warning'></i>Категория *
+                            </label>
+                            <select class='form-select' name='category_id' id='productCategory' required>
+                                <option value=''>Выберите категорию</option>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value='<?= $category['id'] ?>'><?= htmlspecialchars($category['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class='col-md-6 mb-3'>
+                            <label class='form-label fw-bold'>
+                                <i class='fas fa-chart-line me-1 text-danger'></i>Сложность ухода
+                            </label>
+                            <select class='form-select' name='difficulty'>
+                                <option value='легко'>🟢 Легко</option>
+                                <option value='средне'>🟡 Средне</option>
+                                <option value='сложно'>🔴 Сложно</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class='mb-4'>
+                        <div class='d-flex justify-content-between align-items-center mb-2'>
+                            <label class='form-label fw-bold'>
+                                <i class='fas fa-align-left me-1 text-secondary'></i>Описание товара *
+                            </label>
+                            <button type='button' class='btn btn-sm btn-outline-purple' onclick='aiGenerateDescription()'>
+                                <i class='fas fa-robot me-1'></i>🤖 ИИ сгенерирует описание
+                            </button>
+                        </div>
+                        <textarea class='form-control mega-editor' name='description' id='productDescription' rows='5' placeholder='Подробное описание товара...' required></textarea>
+                    </div>
+
+                    <div class='text-end'>
+                        <button type='reset' class='btn btn-outline-secondary me-2 mega-btn'>
+                            <i class='fas fa-undo me-1'></i>Очистить
+                        </button>
+                        <button type='submit' class='btn btn-success mega-btn'>
+                            <i class='fas fa-save me-1'></i>💾 Создать товар
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ИИ Помощник сбоку -->
+    <div class='col-lg-4'>
+        <!-- ИИ Генератор фото -->
+        <div class='mega-card mb-4'>
+            <div class='card-header bg-gradient-info text-white'>
+                <h6 class='mb-0'>
+                    <i class='fas fa-camera me-2'></i>🎨 МЕГА Генератор фото
+                </h6>
+            </div>
+            <div class='card-body p-4'>
+                <div class='photo-preview mb-3' style='height: 200px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 2px dashed #ccc;'>
+                    <div class='text-center'>
+                        <i class='fas fa-image fa-3x text-muted mb-2'></i>
+                        <p class='text-muted mb-0'>Фото товара</p>
+                    </div>
+                </div>
+                <button type='button' class='btn btn-info w-100 mega-btn' onclick='generatePhoto()'>
+                    <i class='fas fa-magic me-1'></i>🎨 Генерировать фото ИИ
+                </button>
+                <small class='text-muted d-block mt-2'>ИИ создаст фото на основе названия и описания</small>
+            </div>
+        </div>
+
+        <!-- Быстрые подсказки -->
+        <div class='mega-card mb-4'>
+            <div class='card-header bg-gradient-success text-white'>
+                <h6 class='mb-0'>
+                    <i class='fas fa-lightbulb me-2'></i>💡 Умные подсказки
+                </h6>
+            </div>
+            <div class='card-body p-3'>
+                <div class='suggestion-item mb-2' onclick='fillSuggestion("Анубиас нана", "Anubias barteri var. nana", 450, 1)'>
+                    <small class='fw-bold text-primary'>🌿 Анубиас нана</small><br>
+                    <small class='text-muted'>Популярное аквариумное растение</small>
+                </div>
+                <div class='suggestion-item mb-2' onclick='fillSuggestion("Неон голубой", "Paracheirodon innesi", 80, 2)'>
+                    <small class='fw-bold text-info'>🐠 Неон голубой</small><br>
+                    <small class='text-muted'>Яркая стайная рыбка</small>
+                </div>
+                <div class='suggestion-item mb-2' onclick='fillSuggestion("Фильтр внешний", "Aquael FZN-3", 2500, 3)'>
+                    <small class='fw-bold text-warning'>⚙️ Фильтр внешний</small><br>
+                    <small class='text-muted'>Мощное оборудование</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Предпросмотр -->
+        <div class='mega-card'>
+            <div class='card-header bg-gradient-purple text-white'>
+                <h6 class='mb-0'>
+                    <i class='fas fa-eye me-2'></i>👁️ Предпросмотр
+                </h6>
+            </div>
+            <div class='card-body p-3'>
+                <div class='preview-card border rounded p-3' style='background: #f8f9fa;'>
+                    <div class='preview-image mb-2' style='height: 120px; background: #e9ecef; border-radius: 8px; display: flex; align-items: center; justify-content: center;'>
+                        <i class='fas fa-fish fa-2x text-muted'></i>
+                    </div>
+                    <h6 class='mb-1' id='previewName'>Название товара</h6>
+                    <p class='small text-muted mb-2' id='previewDescription'>Описание появится здесь...</p>
+                    <div class='d-flex justify-content-between align-items-center'>
+                        <strong class='text-success' id='previewPrice'>0 ₽</strong>
+                        <small class='text-muted' id='previewCategory'>Категория</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.suggestion-item {
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.suggestion-item:hover {
+    background: rgba(14, 165, 233, 0.1);
+    transform: translateX(5px);
+}
+.btn-outline-purple {
+    color: #8B5CF6;
+    border-color: #8B5CF6;
+}
+.btn-outline-purple:hover {
+    color: white;
+    background-color: #8B5CF6;
+}
+</style>
+
+<script>
+let currentCategories = <?= json_encode($categories) ?>;
+
+// ИИ генерация описания
+async function aiGenerateDescription() {
+    const name = document.getElementById('productName').value;
+    const category = document.getElementById('productCategory').selectedOptions[0]?.text || '';
+    const price = document.getElementById('productPrice').value;
+
+    if (!name) {
+        showMegaNotification('Сначала введите название товара!', 'warning');
+        return;
+    }
+
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Генерирую...';
+    btn.disabled = true;
+
+    try {
+        const result = await makeRequest('ai_generate_description', {
+            product_name: name,
+            category: category,
+            price: price
+        });
+
+        if (result.success) {
+            document.getElementById('productDescription').value = result.description;
+            showMegaNotification(result.message, 'success');
+            updatePreview();
+        } else {
+            showMegaNotification(result.message, 'error');
+        }
+    } catch (error) {
+        showMegaNotification('Ошибка генерации описания', 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+// ИИ предложение цены
+async function aiSuggestPrice() {
+    const name = document.getElementById('productName').value;
+    const category = document.getElementById('productCategory').selectedOptions[0]?.text || '';
+
+    if (!name) {
+        showMegaNotification('Сначала введите название товара!', 'warning');
+        return;
+    }
+
+    try {
+        const result = await makeRequest('ai_suggest_price', {
+            product_name: name,
+            category: category
+        });
+
+        if (result.success) {
+            document.getElementById('productPrice').value = result.price;
+            showMegaNotification(result.message, 'success');
+            updatePreview();
+        } else {
+            showMegaNotification(result.message, 'error');
+        }
+    } catch (error) {
+        showMegaNotification('Ошибка анализа цены', 'error');
+    }
+}
+
+// Заполнить подсказку
+function fillSuggestion(name, latin, price, categoryId) {
+    document.getElementById('productName').value = name;
+    document.getElementById('productPrice').value = price;
+    document.getElementById('productCategory').value = categoryId;
+
+    if (latin) {
+        document.querySelector('input[name="latin_name"]').value = latin;
+    }
+
+    updatePreview();
+    showMegaNotification('Подсказка применена! ✨', 'success');
+}
+
+// Генерация фото ИИ
+async function generatePhoto() {
+    const name = document.getElementById('productName').value;
+
+    if (!name) {
+        showMegaNotification('Сначала введите название товара!', 'warning');
+        return;
+    }
+
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Создаю фото...';
+    btn.disabled = true;
+
+    // Имитация генерации фото
+    setTimeout(() => {
+        const photoPreview = document.querySelector('.photo-preview');
+        photoPreview.innerHTML = `
+            <div class="text-center">
+                <i class="fas fa-image fa-3x text-success mb-2"></i>
+                <p class="text-success mb-0 small">Фото сгенерировано!</p>
+            </div>
+        `;
+        photoPreview.style.background = 'linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%)';
+
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+
+        showMegaNotification('🎨 ИИ создал потрясающее фото!', 'success');
+    }, 3000);
+}
+
+// Обновление предпросмотра
+function updatePreview() {
+    const name = document.getElementById('productName').value || 'Название товара';
+    const price = document.getElementById('productPrice').value || '0';
+    const description = document.getElementById('productDescription').value || 'Описание появится здесь...';
+    const categoryText = document.getElementById('productCategory').selectedOptions[0]?.text || 'Категория';
+
+    document.getElementById('previewName').textContent = name;
+    document.getElementById('previewPrice').textContent = new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'RUB',
+        minimumFractionDigits: 0
+    }).format(price);
+    document.getElementById('previewDescription').textContent = description.substring(0, 100) + (description.length > 100 ? '...' : '');
+    document.getElementById('previewCategory').textContent = categoryText;
+}
+
+// Отслеживание изменений формы
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('productForm');
+    const inputs = form.querySelectorAll('input, select, textarea');
+
+    inputs.forEach(input => {
+        input.addEventListener('input', updatePreview);
+        input.addEventListener('change', updatePreview);
+    });
+
+    // Инициализация предпросмотра
+    updatePreview();
+
+    // Автосохранение в localStorage
+    inputs.forEach(input => {
+        const savedValue = localStorage.getItem('product_' + input.name);
+        if (savedValue && !input.value) {
+            input.value = savedValue;
+        }
+
+        input.addEventListener('input', function() {
+            localStorage.setItem('product_' + this.name, this.value);
+        });
+    });
+});
+
+// Очистка формы
+document.querySelector('button[type="reset"]').addEventListener('click', function() {
+    setTimeout(() => {
+        updatePreview();
+        // Очистка localStorage
+        const inputs = document.querySelectorAll('#productForm input, #productForm select, #productForm textarea');
+        inputs.forEach(input => {
+            localStorage.removeItem('product_' + input.name);
+        });
+        showMegaNotification('Форма очищена!', 'info');
+    }, 100);
+});
+</script>
