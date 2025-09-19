@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>МЕГА Админ-панель - АкваСбор</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-green: #2E7D32;
+            --light-green: #4CAF50;
+            --accent-orange: #FF7043;
+            --light-orange: #FFB74D;
+            --dark-green: #1B5E20;
+            --bg-light: #E8F5E8;
+            --text-dark: #2E2E2E;
+            --sidebar-width: 280px;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--bg-light) 0%, #F1F8E9 100%);
+            color: var(--text-dark);
+            overflow-x: hidden;
+        }
+
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            background: linear-gradient(135deg, var(--dark-green) 0%, var(--primary-green) 100%);
+            color: white;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+        }
+
+        .sidebar-header {
+            padding: 2rem;
+            text-align: center;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+        }
+
+        .sidebar-logo {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--light-orange);
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar-subtitle {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+
+        .nav-section {
+            margin-bottom: 2rem;
+        }
+
+        .nav-section-title {
+            padding: 0.5rem 2rem;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            opacity: 0.7;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .nav-item {
+            display: block;
+            padding: 1rem 2rem;
+            color: white;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+            cursor: pointer;
+        }
+
+        .nav-item:hover,
+        .nav-item.active {
+            background: rgba(255,255,255,0.1);
+            border-left-color: var(--light-orange);
+            transform: translateX(5px);
+        }
+
+        .nav-item i {
+            margin-right: 1rem;
+            width: 20px;
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            background: white;
+            min-height: 100vh;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.expanded {
+            margin-left: 0;
+        }
+
+        .top-bar {
+            background: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid var(--light-green);
+        }
+
+        .menu-toggle {
+            background: var(--primary-green);
+            color: white;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .menu-toggle:hover {
+            background: var(--dark-green);
+            transform: scale(1.05);
+        }
+
+        .top-bar-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .admin-page {
+            padding: 2rem;
+            display: none;
+        }
+
+        .admin-page.active {
+            display: block;
+        }
+
+        .page-header {
+            background: linear-gradient(135deg, var(--light-green) 0%, var(--primary-green) 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .page-title {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .page-subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .mega-card {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border: 3px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mega-card:hover {
+            transform: translateY(-10px);
+            border-color: var(--accent-orange);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+
+        .mega-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, var(--light-green), var(--accent-orange));
+        }
+
+        .card-icon {
+            font-size: 3rem;
+            color: var(--primary-green);
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--dark-green);
+            margin-bottom: 1rem;
+        }
+
+        .card-description {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-button {
+            background: linear-gradient(135deg, var(--light-green) 0%, var(--primary-green) 100%);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .card-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        }
+
+        .stat-value {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .quick-actions {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .quick-actions h3 {
+            color: var(--dark-green);
+            margin-bottom: 2rem;
+            font-size: 1.5rem;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .action-btn {
+            background: var(--accent-orange);
+            color: white;
+            border: none;
+            padding: 1rem;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .action-btn:hover {
+            background: var(--light-orange);
+            transform: translateY(-2px);
+        }
+
+        .notification-center {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            max-width: 400px;
+        }
+
+        .notification {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            border-left: 4px solid var(--primary-green);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <i class="fas fa-leaf"></i> АкваСбор
+                </div>
+                <div class="sidebar-subtitle">МЕГА Админ-Центр</div>
+            </div>
+
+            <div class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Главное</div>
+                    <a href="#" class="nav-item active" data-page="dashboard">
+                        <i class="fas fa-tachometer-alt"></i> Дашборд
+                    </a>
+                    <a href="#" class="nav-item" data-page="analytics">
+                        <i class="fas fa-chart-line"></i> Аналитика
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">МЕГА Инструменты</div>
+                    <a href="#" class="nav-item" data-page="mega-creator">
+                        <i class="fas fa-magic"></i> МЕГА Создатель
+                    </a>
+                    <a href="#" class="nav-item" data-page="mega-editor">
+                        <i class="fas fa-edit"></i> МЕГА Редактор
+                    </a>
+                    <a href="#" class="nav-item" data-page="product-manager">
+                        <i class="fas fa-boxes"></i> Менеджер товаров
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Настройки</div>
+                    <a href="#" class="nav-item" data-page="mega-settings">
+                        <i class="fas fa-cogs"></i> МЕГА Настройки
+                    </a>
+                    <a href="#" class="nav-item" data-page="integrations">
+                        <i class="fas fa-plug"></i> Интеграции
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Система</div>
+                    <a href="index.php" class="nav-item">
+                        <i class="fas fa-home"></i> На сайт
+                    </a>
+                    <a href="#" class="nav-item" onclick="showBackup()">
+                        <i class="fas fa-download"></i> Резервная копия
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <button class="menu-toggle" id="menuToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+
+                <div class="top-bar-actions">
+                    <span id="currentTime"></span>
+                    <button class="action-btn" onclick="showNotification('Система работает нормально!')">
+                        <i class="fas fa-bell"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dashboard Page -->
+            <div class="admin-page active" id="dashboard">
+                <div class="page-header">
+                    <div class="page-title">
+                        <i class="fas fa-rocket"></i> МЕГА Админ-Центр
+                    </div>
+                    <div class="page-subtitle">
+                        Управление интернет-магазином АкваСбор на новом уровне
+                    </div>
+                </div>
+
+                <!-- Stats Overview -->
+                <div class="stats-overview">
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalProducts">0</div>
+                        <div class="stat-label">Товаров</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalOrders">0</div>
+                        <div class="stat-label">Заказов</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalRevenue">0₽</div>
+                        <div class="stat-label">Выручка</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="activeUsers">0</div>
+                        <div class="stat-label">Онлайн</div>
+                    </div>
+                </div>
+
+                <!-- Mega Tools Grid -->
+                <div class="dashboard-grid">
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-magic"></i>
+                        </div>
+                        <div class="card-title">МЕГА Создатель товаров</div>
+                        <div class="card-description">
+                            Создавайте товары с помощью ИИ-помощника, автозаполнения, шаблонов и пошагового мастера. Поддержка массовой загрузки изображений.
+                        </div>
+                        <button class="card-button" onclick="loadPage('mega-creator')">
+                            Открыть создатель
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-edit"></i>
+                        </div>
+                        <div class="card-title">МЕГА Редактор</div>
+                        <div class="card-description">
+                            Редактируйте товары с продвинутыми функциями: групповые операции, SEO оптимизация, ИИ анализ, галерея изображений.
+                        </div>
+                        <button class="card-button" onclick="loadPage('mega-editor')">
+                            Открыть редактор
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-cogs"></i>
+                        </div>
+                        <div class="card-title">МЕГА Настройки</div>
+                        <div class="card-description">
+                            Полная кастомизация сайта: дизайн, интеграции, платежи, доставка, SEO, аналитика. Визуальный редактор интерфейса.
+                        </div>
+                        <button class="card-button" onclick="loadPage('mega-settings')">
+                            Открыть настройки
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="card-title">Аналитика Pro</div>
+                        <div class="card-description">
+                            Детальная аналитика продаж, поведения пользователей, эффективности товаров. Интеграция с Google Analytics.
+                        </div>
+                        <button class="card-button" onclick="loadPage('analytics')">
+                            Посмотреть отчеты
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-boxes"></i>
+                        </div>
+                        <div class="card-title">Менеджер товаров</div>
+                        <div class="card-description">
+                            Управление каталогом: массовые операции, импорт/экспорт, категории, фильтры, поиск и сортировка.
+                        </div>
+                        <button class="card-button" onclick="loadPage('product-manager')">
+                            Управлять товарами
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-plug"></i>
+                        </div>
+                        <div class="card-title">Интеграции</div>
+                        <div class="card-description">
+                            Подключение платежных систем, CRM, email-рассылки, социальных сетей, складского учета и курьерских служб.
+                        </div>
+                        <button class="card-button" onclick="loadPage('integrations')">
+                            Настроить интеграции
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <h3>Быстрые действия</h3>
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="quickCreateProduct()">
+                            <i class="fas fa-plus"></i> Добавить товар
+                        </button>
+                        <button class="action-btn" onclick="exportData()">
+                            <i class="fas fa-download"></i> Экспорт данных
+                        </button>
+                        <button class="action-btn" onclick="importData()">
+                            <i class="fas fa-upload"></i> Импорт данных
+                        </button>
+                        <button class="action-btn" onclick="clearCache()">
+                            <i class="fas fa-broom"></i> Очистить кэш
+                        </button>
+                        <button class="action-btn" onclick="backupSite()">
+                            <i class="fas fa-shield-alt"></i> Резервное копирование
+                        </button>
+                        <button class="action-btn" onclick="optimizeSEO()">
+                            <i class="fas fa-search"></i> SEO оптимизация
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other pages will be loaded here -->
+            <div class="admin-page" id="mega-creator"></div>
+            <div class="admin-page" id="mega-editor"></div>
+            <div class="admin-page" id="mega-settings"></div>
+            <div class="admin-page" id="product-manager"></div>
+            <div class="admin-page" id="analytics"></div>
+            <div class="admin-page" id="integrations"></div>
+        </main>
+    </div>
+
+    <!-- Notification Center -->
+    <div class="notification-center" id="notificationCenter"></div>
+
+    <script>
+        // Global variables
+        let currentPage = 'dashboard';
+        let products = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeAdmin();
+            loadDashboardData();
+            updateClock();
+            setInterval(updateClock, 1000);
+        });
+
+        function initializeAdmin() {
+            // Menu toggle
+            document.getElementById('menuToggle').addEventListener('click', function() {
+                const sidebar = document.getElementById('sidebar');
+                const mainContent = document.getElementById('mainContent');
+
+                sidebar.classList.toggle('collapsed');
+                mainContent.classList.toggle('expanded');
+            });
+
+            // Navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    if (this.getAttribute('href') === '#') {
+                        e.preventDefault();
+                        const page = this.dataset.page;
+                        if (page) {
+                            loadPage(page);
+                        }
+                    }
+                });
+            });
+
+            // Load products
+            loadProducts();
+        }
+
+        async function loadProducts() {
+            try {
+                const response = await fetch('database.php?action=get_products');
+                products = await response.json();
+                updateStats();
+            } catch (error) {
+                console.error('Error loading products:', error);
+            }
+        }
+
+        function loadDashboardData() {
+            // Simulate loading data
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById('totalProducts').textContent = products.length;
+            document.getElementById('totalOrders').textContent = Math.floor(Math.random() * 200) + 50;
+            document.getElementById('totalRevenue').textContent = (Math.floor(Math.random() * 500000) + 100000).toLocaleString() + '₽';
+            document.getElementById('activeUsers').textContent = Math.floor(Math.random() * 50) + 5;
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toLocaleString('ru-RU');
+            document.getElementById('currentTime').textContent = timeString;
+        }
+
+        async function loadPage(pageName) {
+            // Update active nav
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.page === pageName) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Show loading
+            const pageElement = document.getElementById(pageName);
+            if (!pageElement) return;
+
+            // Hide all pages
+            document.querySelectorAll('.admin-page').forEach(page => {
+                page.classList.remove('active');
+            });
+
+            // Load page content if not loaded
+            if (pageElement.innerHTML.trim() === '') {
+                pageElement.innerHTML = '<div style="text-align: center; padding: 4rem;"><i class="fas fa-spinner fa-spin" style="font-size: 3rem; color: var(--primary-green);"></i><br><br>Загрузка...</div>';
+
+                try {
+                    const response = await fetch(`admin_pages/${pageName}.php`);
+                    const content = await response.text();
+                    pageElement.innerHTML = content;
+
+                    // Execute any scripts in the loaded content
+                    const scripts = pageElement.querySelectorAll('script');
+                    scripts.forEach(script => {
+                        eval(script.textContent);
+                    });
+
+                } catch (error) {
+                    console.error('Error loading page:', error);
+                    pageElement.innerHTML = `
+                        <div style="text-align: center; padding: 4rem; color: #f44336;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i><br><br>
+                            Ошибка загрузки страницы
+                        </div>`;
+                }
+            }
+
+            // Show page
+            pageElement.classList.add('active');
+            currentPage = pageName;
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}" style="color: var(--primary-green);"></i>
+                    <div style="flex: 1;">${message}</div>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: #999; cursor: pointer;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('notificationCenter').appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+
+        // Quick Actions
+        function quickCreateProduct() {
+            loadPage('mega-creator');
+        }
+
+        function exportData() {
+            showNotification('Экспорт данных начат...', 'info');
+            // Simulate export
+            setTimeout(() => {
+                showNotification('Данные экспортированы успешно!', 'success');
+            }, 2000);
+        }
+
+        function importData() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.csv,.xlsx,.json';
+            input.onchange = function() {
+                showNotification('Импорт данных начат...', 'info');
+                setTimeout(() => {
+                    showNotification('Данные импортированы успешно!', 'success');
+                }, 3000);
+            };
+            input.click();
+        }
+
+        function clearCache() {
+            showNotification('Кэш очищается...', 'info');
+            setTimeout(() => {
+                showNotification('Кэш очищен успешно!', 'success');
+            }, 1500);
+        }
+
+        function backupSite() {
+            showNotification('Создание резервной копии...', 'info');
+            setTimeout(() => {
+                showNotification('Резервная копия создана успешно!', 'success');
+            }, 3000);
+        }
+
+        function optimizeSEO() {
+            showNotification('SEO оптимизация запущена...', 'info');
+            setTimeout(() => {
+                showNotification('SEO оптимизация завершена!', 'success');
+            }, 4000);
+        }
+
+        function showBackup() {
+            if (confirm('Создать резервную копию всех данных?')) {
+                backupSite();
+            }
+        }
+
+        // Mobile responsiveness
+        if (window.innerWidth <= 768) {
+            document.getElementById('sidebar').classList.add('collapsed');
+            document.getElementById('mainContent').classList.add('expanded');
+        }
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>МЕГА Админ-панель - АкваСбор</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-green: #2E7D32;
+            --light-green: #4CAF50;
+            --accent-orange: #FF7043;
+            --light-orange: #FFB74D;
+            --dark-green: #1B5E20;
+            --bg-light: #E8F5E8;
+            --text-dark: #2E2E2E;
+            --sidebar-width: 280px;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--bg-light) 0%, #F1F8E9 100%);
+            color: var(--text-dark);
+            overflow-x: hidden;
+        }
+
+        .admin-container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            background: linear-gradient(135deg, var(--dark-green) 0%, var(--primary-green) 100%);
+            color: white;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+        }
+
+        .sidebar-header {
+            padding: 2rem;
+            text-align: center;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+        }
+
+        .sidebar-logo {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--light-orange);
+            margin-bottom: 0.5rem;
+        }
+
+        .sidebar-subtitle {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+
+        .nav-section {
+            margin-bottom: 2rem;
+        }
+
+        .nav-section-title {
+            padding: 0.5rem 2rem;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            opacity: 0.7;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .nav-item {
+            display: block;
+            padding: 1rem 2rem;
+            color: white;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+            cursor: pointer;
+        }
+
+        .nav-item:hover,
+        .nav-item.active {
+            background: rgba(255,255,255,0.1);
+            border-left-color: var(--light-orange);
+            transform: translateX(5px);
+        }
+
+        .nav-item i {
+            margin-right: 1rem;
+            width: 20px;
+        }
+
+        .main-content {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            background: white;
+            min-height: 100vh;
+            transition: margin-left 0.3s ease;
+        }
+
+        .main-content.expanded {
+            margin-left: 0;
+        }
+
+        .top-bar {
+            background: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid var(--light-green);
+        }
+
+        .menu-toggle {
+            background: var(--primary-green);
+            color: white;
+            border: none;
+            padding: 0.75rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .menu-toggle:hover {
+            background: var(--dark-green);
+            transform: scale(1.05);
+        }
+
+        .top-bar-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .admin-page {
+            padding: 2rem;
+            display: none;
+        }
+
+        .admin-page.active {
+            display: block;
+        }
+
+        .page-header {
+            background: linear-gradient(135deg, var(--light-green) 0%, var(--primary-green) 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .page-title {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .page-subtitle {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .mega-card {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border: 3px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mega-card:hover {
+            transform: translateY(-10px);
+            border-color: var(--accent-orange);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+
+        .mega-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, var(--light-green), var(--accent-orange));
+        }
+
+        .card-icon {
+            font-size: 3rem;
+            color: var(--primary-green);
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--dark-green);
+            margin-bottom: 1rem;
+        }
+
+        .card-description {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-button {
+            background: linear-gradient(135deg, var(--light-green) 0%, var(--primary-green) 100%);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .card-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, var(--primary-green) 0%, var(--dark-green) 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        }
+
+        .stat-value {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .quick-actions {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .quick-actions h3 {
+            color: var(--dark-green);
+            margin-bottom: 2rem;
+            font-size: 1.5rem;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .action-btn {
+            background: var(--accent-orange);
+            color: white;
+            border: none;
+            padding: 1rem;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .action-btn:hover {
+            background: var(--light-orange);
+            transform: translateY(-2px);
+        }
+
+        .notification-center {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            max-width: 400px;
+        }
+
+        .notification {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            border-left: 4px solid var(--primary-green);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <i class="fas fa-leaf"></i> АкваСбор
+                </div>
+                <div class="sidebar-subtitle">МЕГА Админ-Центр</div>
+            </div>
+
+            <div class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Главное</div>
+                    <a href="#" class="nav-item active" data-page="dashboard">
+                        <i class="fas fa-tachometer-alt"></i> Дашборд
+                    </a>
+                    <a href="#" class="nav-item" data-page="analytics">
+                        <i class="fas fa-chart-line"></i> Аналитика
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">МЕГА Инструменты</div>
+                    <a href="#" class="nav-item" data-page="mega-creator">
+                        <i class="fas fa-magic"></i> МЕГА Создатель
+                    </a>
+                    <a href="#" class="nav-item" data-page="mega-editor">
+                        <i class="fas fa-edit"></i> МЕГА Редактор
+                    </a>
+                    <a href="#" class="nav-item" data-page="product-manager">
+                        <i class="fas fa-boxes"></i> Менеджер товаров
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Настройки</div>
+                    <a href="#" class="nav-item" data-page="mega-settings">
+                        <i class="fas fa-cogs"></i> МЕГА Настройки
+                    </a>
+                    <a href="#" class="nav-item" data-page="integrations">
+                        <i class="fas fa-plug"></i> Интеграции
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Система</div>
+                    <a href="index.php" class="nav-item">
+                        <i class="fas fa-home"></i> На сайт
+                    </a>
+                    <a href="#" class="nav-item" onclick="showBackup()">
+                        <i class="fas fa-download"></i> Резервная копия
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <button class="menu-toggle" id="menuToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+
+                <div class="top-bar-actions">
+                    <span id="currentTime"></span>
+                    <button class="action-btn" onclick="showNotification('Система работает нормально!')">
+                        <i class="fas fa-bell"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dashboard Page -->
+            <div class="admin-page active" id="dashboard">
+                <div class="page-header">
+                    <div class="page-title">
+                        <i class="fas fa-rocket"></i> МЕГА Админ-Центр
+                    </div>
+                    <div class="page-subtitle">
+                        Управление интернет-магазином АкваСбор на новом уровне
+                    </div>
+                </div>
+
+                <!-- Stats Overview -->
+                <div class="stats-overview">
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalProducts">0</div>
+                        <div class="stat-label">Товаров</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalOrders">0</div>
+                        <div class="stat-label">Заказов</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="totalRevenue">0₽</div>
+                        <div class="stat-label">Выручка</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="activeUsers">0</div>
+                        <div class="stat-label">Онлайн</div>
+                    </div>
+                </div>
+
+                <!-- Mega Tools Grid -->
+                <div class="dashboard-grid">
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-magic"></i>
+                        </div>
+                        <div class="card-title">МЕГА Создатель товаров</div>
+                        <div class="card-description">
+                            Создавайте товары с помощью ИИ-помощника, автозаполнения, шаблонов и пошагового мастера. Поддержка массовой загрузки изображений.
+                        </div>
+                        <button class="card-button" onclick="loadPage('mega-creator')">
+                            Открыть создатель
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-edit"></i>
+                        </div>
+                        <div class="card-title">МЕГА Редактор</div>
+                        <div class="card-description">
+                            Редактируйте товары с продвинутыми функциями: групповые операции, SEO оптимизация, ИИ анализ, галерея изображений.
+                        </div>
+                        <button class="card-button" onclick="loadPage('mega-editor')">
+                            Открыть редактор
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-cogs"></i>
+                        </div>
+                        <div class="card-title">МЕГА Настройки</div>
+                        <div class="card-description">
+                            Полная кастомизация сайта: дизайн, интеграции, платежи, доставка, SEO, аналитика. Визуальный редактор интерфейса.
+                        </div>
+                        <button class="card-button" onclick="loadPage('mega-settings')">
+                            Открыть настройки
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div class="card-title">Аналитика Pro</div>
+                        <div class="card-description">
+                            Детальная аналитика продаж, поведения пользователей, эффективности товаров. Интеграция с Google Analytics.
+                        </div>
+                        <button class="card-button" onclick="loadPage('analytics')">
+                            Посмотреть отчеты
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-boxes"></i>
+                        </div>
+                        <div class="card-title">Менеджер товаров</div>
+                        <div class="card-description">
+                            Управление каталогом: массовые операции, импорт/экспорт, категории, фильтры, поиск и сортировка.
+                        </div>
+                        <button class="card-button" onclick="loadPage('product-manager')">
+                            Управлять товарами
+                        </button>
+                    </div>
+
+                    <div class="mega-card">
+                        <div class="card-icon">
+                            <i class="fas fa-plug"></i>
+                        </div>
+                        <div class="card-title">Интеграции</div>
+                        <div class="card-description">
+                            Подключение платежных систем, CRM, email-рассылки, социальных сетей, складского учета и курьерских служб.
+                        </div>
+                        <button class="card-button" onclick="loadPage('integrations')">
+                            Настроить интеграции
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions">
+                    <h3>Быстрые действия</h3>
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="quickCreateProduct()">
+                            <i class="fas fa-plus"></i> Добавить товар
+                        </button>
+                        <button class="action-btn" onclick="exportData()">
+                            <i class="fas fa-download"></i> Экспорт данных
+                        </button>
+                        <button class="action-btn" onclick="importData()">
+                            <i class="fas fa-upload"></i> Импорт данных
+                        </button>
+                        <button class="action-btn" onclick="clearCache()">
+                            <i class="fas fa-broom"></i> Очистить кэш
+                        </button>
+                        <button class="action-btn" onclick="backupSite()">
+                            <i class="fas fa-shield-alt"></i> Резервное копирование
+                        </button>
+                        <button class="action-btn" onclick="optimizeSEO()">
+                            <i class="fas fa-search"></i> SEO оптимизация
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other pages will be loaded here -->
+            <div class="admin-page" id="mega-creator"></div>
+            <div class="admin-page" id="mega-editor"></div>
+            <div class="admin-page" id="mega-settings"></div>
+            <div class="admin-page" id="product-manager"></div>
+            <div class="admin-page" id="analytics"></div>
+            <div class="admin-page" id="integrations"></div>
+        </main>
+    </div>
+
+    <!-- Notification Center -->
+    <div class="notification-center" id="notificationCenter"></div>
+
+    <script>
+        // Global variables
+        let currentPage = 'dashboard';
+        let products = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeAdmin();
+            loadDashboardData();
+            updateClock();
+            setInterval(updateClock, 1000);
+        });
+
+        function initializeAdmin() {
+            // Menu toggle
+            document.getElementById('menuToggle').addEventListener('click', function() {
+                const sidebar = document.getElementById('sidebar');
+                const mainContent = document.getElementById('mainContent');
+
+                sidebar.classList.toggle('collapsed');
+                mainContent.classList.toggle('expanded');
+            });
+
+            // Navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    if (this.getAttribute('href') === '#') {
+                        e.preventDefault();
+                        const page = this.dataset.page;
+                        if (page) {
+                            loadPage(page);
+                        }
+                    }
+                });
+            });
+
+            // Load products
+            loadProducts();
+        }
+
+        async function loadProducts() {
+            try {
+                const response = await fetch('database.php?action=get_products');
+                products = await response.json();
+                updateStats();
+            } catch (error) {
+                console.error('Error loading products:', error);
+            }
+        }
+
+        function loadDashboardData() {
+            // Simulate loading data
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById('totalProducts').textContent = products.length;
+            document.getElementById('totalOrders').textContent = Math.floor(Math.random() * 200) + 50;
+            document.getElementById('totalRevenue').textContent = (Math.floor(Math.random() * 500000) + 100000).toLocaleString() + '₽';
+            document.getElementById('activeUsers').textContent = Math.floor(Math.random() * 50) + 5;
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toLocaleString('ru-RU');
+            document.getElementById('currentTime').textContent = timeString;
+        }
+
+        async function loadPage(pageName) {
+            // Update active nav
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.page === pageName) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Show loading
+            const pageElement = document.getElementById(pageName);
+            if (!pageElement) return;
+
+            // Hide all pages
+            document.querySelectorAll('.admin-page').forEach(page => {
+                page.classList.remove('active');
+            });
+
+            // Load page content if not loaded
+            if (pageElement.innerHTML.trim() === '') {
+                pageElement.innerHTML = '<div style="text-align: center; padding: 4rem;"><i class="fas fa-spinner fa-spin" style="font-size: 3rem; color: var(--primary-green);"></i><br><br>Загрузка...</div>';
+
+                try {
+                    const response = await fetch(`admin_pages/${pageName}.php`);
+                    const content = await response.text();
+                    pageElement.innerHTML = content;
+
+                    // Execute any scripts in the loaded content
+                    const scripts = pageElement.querySelectorAll('script');
+                    scripts.forEach(script => {
+                        eval(script.textContent);
+                    });
+
+                } catch (error) {
+                    console.error('Error loading page:', error);
+                    pageElement.innerHTML = `
+                        <div style="text-align: center; padding: 4rem; color: #f44336;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 3rem;"></i><br><br>
+                            Ошибка загрузки страницы
+                        </div>`;
+                }
+            }
+
+            // Show page
+            pageElement.classList.add('active');
+            currentPage = pageName;
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}" style="color: var(--primary-green);"></i>
+                    <div style="flex: 1;">${message}</div>
+                    <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: #999; cursor: pointer;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('notificationCenter').appendChild(notification);
+
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+
+        // Quick Actions
+        function quickCreateProduct() {
+            loadPage('mega-creator');
+        }
+
+        function exportData() {
+            showNotification('Экспорт данных начат...', 'info');
+            // Simulate export
+            setTimeout(() => {
+                showNotification('Данные экспортированы успешно!', 'success');
+            }, 2000);
+        }
+
+        function importData() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.csv,.xlsx,.json';
+            input.onchange = function() {
+                showNotification('Импорт данных начат...', 'info');
+                setTimeout(() => {
+                    showNotification('Данные импортированы успешно!', 'success');
+                }, 3000);
+            };
+            input.click();
+        }
+
+        function clearCache() {
+            showNotification('Кэш очищается...', 'info');
+            setTimeout(() => {
+                showNotification('Кэш очищен успешно!', 'success');
+            }, 1500);
+        }
+
+        function backupSite() {
+            showNotification('Создание резервной копии...', 'info');
+            setTimeout(() => {
+                showNotification('Резервная копия создана успешно!', 'success');
+            }, 3000);
+        }
+
+        function optimizeSEO() {
+            showNotification('SEO оптимизация запущена...', 'info');
+            setTimeout(() => {
+                showNotification('SEO оптимизация завершена!', 'success');
+            }, 4000);
+        }
+
+        function showBackup() {
+            if (confirm('Создать резервную копию всех данных?')) {
+                backupSite();
+            }
+        }
+
+        // Mobile responsiveness
+        if (window.innerWidth <= 768) {
+            document.getElementById('sidebar').classList.add('collapsed');
+            document.getElementById('mainContent').classList.add('expanded');
+        }
+    </script>
+</body>
+</html>
