@@ -90,11 +90,11 @@ $defaultConfig = [
     'account' => '',
   ],
   'yukassa' => [
-    'enabled'  => false,
+    'enabled'  => true,
     'shop_id'  => '',
     'secret_key' => '',
     'test_mode' => true,
-    'return_url' => $siteURL . '/payment_result',
+    'return_url' => $siteURL . '/payment_result.php',
   ],
   'theme' => [
     'mode'         => 'light',
@@ -300,12 +300,12 @@ function tg_send_file_cfg($cfg,$file,$caption=''){
 }
 
 /* ЮКасса Integration */
-function yukassa_create_payment($cfg, $amount, $description, $order_id){
+function yukassa_create_payment($cfg, $amount, $description, $order_id, $return_url = null){
   if(empty($cfg['yukassa']['enabled'])) return [false, 'Payments disabled'];
 
   $shop_id = $cfg['yukassa']['shop_id'];
   $secret_key = $cfg['yukassa']['secret_key'];
-  $return_url = $cfg['yukassa']['return_url'];
+  if (!$return_url) $return_url = $cfg['yukassa']['return_url'];
 
   if(!$shop_id || !$secret_key) return [false, 'Missing shop_id or secret_key'];
 
@@ -315,7 +315,8 @@ function yukassa_create_payment($cfg, $amount, $description, $order_id){
     'amount' => ['value' => number_format($amount, 2, '.', ''), 'currency' => 'RUB'],
     'confirmation' => ['type' => 'redirect', 'return_url' => $return_url],
     'description' => $description,
-    'metadata' => ['order_id' => $order_id]
+    'metadata' => ['order_id' => (string)$order_id],
+    'capture' => true
   ];
 
   $ch = curl_init($url);
@@ -338,6 +339,34 @@ function yukassa_create_payment($cfg, $amount, $description, $order_id){
   if(!$response || !isset($response['confirmation']['confirmation_url'])) {
     return [false, 'Invalid response: ' . $result];
   }
+
+  return [true, $response];
+}
+
+function yukassa_check_payment($cfg, $payment_id){
+  if(empty($cfg['yukassa']['enabled'])) return [false, 'Payments disabled'];
+
+  $shop_id = $cfg['yukassa']['shop_id'];
+  $secret_key = $cfg['yukassa']['secret_key'];
+
+  if(!$shop_id || !$secret_key) return [false, 'Missing credentials'];
+
+  $url = "https://api.yookassa.ru/v3/payments/$payment_id";
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Authorization: Basic ' . base64_encode($shop_id . ':' . $secret_key)
+  ]);
+
+  $result = curl_exec($ch);
+  $error = curl_error($ch);
+  curl_close($ch);
+
+  if($error) return [false, 'CURL error: ' . $error];
+
+  $response = json_decode($result, true);
+  if(!$response) return [false, 'Invalid response: ' . $result];
 
   return [true, $response];
 }
@@ -431,14 +460,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST'){
       if($name===''||$phone===''||$service==='') throw new Exception('Укажите имя, телефон и услугу.');
       $saved=null; if(!empty($_FILES['file']['name'])) $saved=save_upload_order('file',$uploadsDir);
 
+      $order_id = 'order_'.time().'_'.rand(1000,9999);
+
       $order = [
+        'id'=>$order_id,
         'ts'=>date('Y-m-d H:i:s'),'name'=>$name,'phone'=>$phone,'service'=>$service,'price'=>$price,'comment'=>$comment,'calc'=>$calc,
         'file'=>$saved?('uploads/'.$saved):null,'ip'=>$_SERVER['REMOTE_ADDR']??'','ua'=>$_SERVER['HTTP_USER_AGENT']??'',
-        'payment_method'=>$payment_method
+        'payment_method'=>$payment_method,'type'=>'service','status'=>'new'
       ];
       log_order($ordersLog,$order);
 
       $body = "Новая заявка с сайта {$cfg['brand']}\n\n"
+            . "ID заказа: $order_id\n"
             . "Имя: $name\nТелефон: $phone\nУслуга: $service\n"
             . ($price?"Ориент. цена: $price\n":'')
             . ($calc?"Калькулятор: $calc\n":'')
@@ -454,20 +487,22 @@ if ($_SERVER['REQUEST_METHOD']==='POST'){
              . ($comment?'💬 '.esc($comment).'\n':'')
              . ($payment_method?'💳 Оплата: '.esc($payment_method).'\n':'')
              . ($saved?"📎 Файл: $siteURL/uploads/$saved\n":'')
+             . "🆔 $order_id\n"
              . "🌐 $siteURL";
       [$tgOk,$tgErr]=tg_send_message_cfg($cfg,$tgMsg);
       if($saved) @tg_send_file_cfg($cfg, $BASE.'/uploads/'.basename($saved), 'Макет к заявке');
 
-      $response = ['ok'=>true,'emailOk'=>$mailOk,'tgOk'=>$tgOk];
+      $response = ['ok'=>true,'emailOk'=>$mailOk,'tgOk'=>$tgOk,'order_id'=>$order_id];
 
       if($payment_method === 'online' && $price && preg_match('/(\d+)/', $price, $matches)) {
         $amount = (float)$matches[1];
         if($amount > 0) {
-          [$payOk, $payResult] = yukassa_create_payment($cfg, $amount, $service, time());
+          [$payOk, $payResult] = yukassa_create_payment($cfg, $amount, $service, $order_id);
           if($payOk) {
             $response['payment'] = true;
             $response['payment_url'] = $payResult['confirmation']['confirmation_url'];
-            $response['message'] = 'Заявка отправлена. Для оплаты перейдите по ссылке.';
+            $response['payment_id'] = $payResult['id'];
+            $response['message'] = 'Заявка отправлена. Переходим к оплате...';
           } else {
             $response['message'] = 'Заявка отправлена. Ошибка создания платежа: ' . $payResult;
           }
@@ -480,6 +515,117 @@ if ($_SERVER['REQUEST_METHOD']==='POST'){
       echo json_encode($response); exit;
     }catch(Exception $e){
       echo json_encode(['ok'=>false,'message'=>$e->getMessage()]); exit;
+    }
+  }
+
+  // Заказ корзины товаров
+  if (($_POST['mode']??'')==='cart_order'){
+    header('Content-Type: application/json; charset=utf-8');
+    try{
+      $name = sanitize_text($_POST['name']??'');
+      $phone= sanitize_text($_POST['phone']??'');
+      $comment=sanitize_text($_POST['comment']??'');
+      $cart = json_decode($_POST['cart']??'[]', true);
+      $payment_method = sanitize_text($_POST['payment_method']??'offline');
+
+      if($name===''||$phone==='') throw new Exception('Укажите имя и телефон.');
+      if(empty($cart)) throw new Exception('Корзина пуста.');
+
+      // Подсчитываем итоговую стоимость и проверяем наличие
+      $products = json_decode(@file_get_contents($BASE.'/products.json'), true) ?? [];
+      $totalPrice = 0;
+      $orderItems = [];
+
+      foreach($cart as $item){
+        $product = null;
+        foreach($products as $p){
+          if($p['id'] == $item['id'] && $p['enabled']){
+            $product = $p;
+            break;
+          }
+        }
+        if(!$product) continue;
+        if($product['stock'] < $item['quantity']) throw new Exception('Недостаточно товара на складе: '.$product['name']);
+
+        $itemTotal = $product['price'] * $item['quantity'];
+        $totalPrice += $itemTotal;
+        $orderItems[] = [
+          'product_id'=>$product['id'],
+          'name'=>$product['name'],
+          'price'=>$product['price'],
+          'quantity'=>$item['quantity'],
+          'total'=>$itemTotal
+        ];
+      }
+
+      $order_id = 'cart_'.time().'_'.rand(1000,9999);
+
+      $order = [
+        'id'=>$order_id,
+        'type'=>'cart',
+        'ts'=>date('Y-m-d H:i:s'),
+        'items'=>$orderItems,
+        'total_price'=>$totalPrice,
+        'name'=>$name,
+        'phone'=>$phone,
+        'comment'=>$comment,
+        'payment_method'=>$payment_method,
+        'ip'=>$_SERVER['REMOTE_ADDR']??'',
+        'status'=>'new'
+      ];
+
+      log_order($ordersLog, $order);
+
+      // Отправка email
+      $emailBody = "Заказ товаров с сайта {$cfg['brand']}\n\nID заказа: $order_id\n\n";
+      foreach($orderItems as $item){
+        $emailBody .= "• {$item['name']} - {$item['price']} ₽ × {$item['quantity']} шт = {$item['total']} ₽\n";
+      }
+      $emailBody .= "\nИтого: $totalPrice ₽\n\n";
+      $emailBody .= "Покупатель: $name\n";
+      $emailBody .= "Телефон: $phone\n";
+      if($comment) $emailBody .= "Комментарий: $comment\n";
+      $emailBody .= "Способ оплаты: ".($payment_method==='online'?'Онлайн':'При получении')."\n";
+      $emailBody .= "IP: {$order['ip']}\n\n";
+      $emailBody .= "Обработайте заказ в админке!";
+
+      [$mailOk,$mailErrs]=send_email_all($cfg,'Заказ корзины #'.$order_id,$emailBody);
+
+      // Telegram уведомление
+      $tgMsg = '🛒 <b>Заказ товаров #'.esc($order_id).'</b>\n\n';
+      foreach($orderItems as $item){
+        $tgMsg .= '• '.esc($item['name']).' × '.$item['quantity'].' = '.number_format($item['total']).' ₽\n';
+      }
+      $tgMsg .= '\n💰 <b>Итого: '.number_format($totalPrice).' ₽</b>\n\n';
+      $tgMsg .= '👤 '.esc($name).'\n📞 '.esc($phone).'\n';
+      if($comment) $tgMsg .= '💬 '.esc($comment).'\n';
+      $tgMsg .= '💳 '.($payment_method==='online'?'Онлайн оплата':'Оплата при получении').'\n';
+      $tgMsg .= "🌐 $siteURL";
+
+      [$tgOk,$tgErr]=tg_send_message_cfg($cfg,$tgMsg);
+
+      $response = ['ok'=>true,'emailOk'=>$mailOk,'tgOk'=>$tgOk,'order_id'=>$order_id];
+
+      if($payment_method === 'online' && $totalPrice > 0) {
+        [$payOk, $payResult] = yukassa_create_payment($cfg, $totalPrice, "Заказ товаров #$order_id", $order_id);
+        if($payOk) {
+          $response['payment'] = true;
+          $response['payment_url'] = $payResult['confirmation']['confirmation_url'];
+          $response['payment_id'] = $payResult['id'];
+          $response['message'] = 'Заказ принят. Переходим к оплате...';
+        } else {
+          $response['message'] = 'Заказ принят. Ошибка создания платежа: ' . $payResult;
+        }
+      } else {
+        $response['message'] = 'Заказ принят! Мы свяжемся с вами для подтверждения.';
+      }
+
+      echo json_encode($response);
+      exit;
+
+    }catch(Exception $e){
+      echo json_encode(['ok'=>false,'message'=>$e->getMessage()]);
+      exit;
     }
   }
 
@@ -661,22 +807,37 @@ if (isset($_GET['admin'])):
         <h3>Заявки и чат-логи</h3>
         <div class='muted mini'>Последние 200 записей</div>
         <div style='max-height:420px;overflow:auto;margin-top:8px'>
-          <table><tr><th>Время</th><th>Имя</th><th>Телефон</th><th>Услуга</th><th>Цена</th><th>Оплата</th><th>Файл</th></tr>
+          <table><tr><th>Время</th><th>Тип</th><th>Имя</th><th>Телефон</th><th>Услуга/Товары</th><th>Цена</th><th>Оплата</th><th>Файл</th></tr>
           <?php
             $lines=@file($ordersLog, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES)?:[];
             $lines=array_slice(array_reverse($lines),0,200);
             foreach($lines as $line){
-              if(!preg_match('~^$$(.*?)$$\s*(\{.+\})$~u',$line,$m)) continue;
+              if(!preg_match('~^$$(.+?)$$\s*(.+)$~u',$line,$m)) continue;
               $ts=$m[1]; $j=json_decode($m[2],true);
+              if(!$j) continue;
               echo '<tr>';
-              echo '<td>'.esc($ts).'</td>';
+              echo '<td><small>'.esc(date('d.m H:i',strtotime($ts))).'</small></td>';
+              $type = $j['type'] ?? 'service';
+              $typeIcon = $type==='cart'?'🛒':($type==='callback'?'📞':'📋');
+              echo '<td>'.$typeIcon.'</td>';
               echo '<td>'.esc($j['name']??'').'</td>';
               echo '<td>'.esc($j['phone']??'').'</td>';
-              echo '<td>'.esc($j['service']??$j['type']??'').'</td>';
-              echo '<td>'.esc($j['price']??'').'</td>';
-              echo '<td>'.esc($j['payment_method']??'').'</td>';
-              if(!empty($j['file'])){ $f=basename($j['file']); echo '<td><a href=\'uploads/'.esc($f).'\' target=\'_blank\'>скачать</a></td>'; }
-              else echo '<td class=\'muted\'>—</td>';
+
+              if($type==='cart'){
+                $itemCount = count($j['items']??[]);
+                echo '<td>'.$itemCount.' товаров</td>';
+                echo '<td><strong>'.number_format($j['total_price']??0).' ₽</strong></td>';
+              } elseif($type==='callback'){
+                echo '<td>Обратный звонок</td>';
+                echo '<td>—</td>';
+              } else {
+                echo '<td>'.esc($j['service']??'').'</td>';
+                echo '<td>'.esc($j['price']??'—').'</td>';
+              }
+
+              echo '<td>'.esc($j['payment_method']??'—').'</td>';
+              if(!empty($j['file'])){ $f=basename($j['file']); echo '<td><a href="uploads/'.esc($f).'" target="_blank">скачать</a></td>'; }
+              else echo '<td class="muted">—</td>';
               echo '</tr>';
             }
           ?>
@@ -862,9 +1023,9 @@ if (isset($_GET['admin'])):
         reader.onload = function(e) {
           const content = drop.querySelector('.drop-content');
           content.innerHTML = `
-            <img src="${e.target.result}" class="drop-preview" alt="Превью">
-            <div class="drop-text">Файл готов к загрузке</div>
-            <div class="drop-hint">Нажмите для замены</div>
+            <img src='${e.target.result}' class='drop-preview' alt='Превью'>
+            <div class='drop-text'>Файл готов к загрузке</div>
+            <div class='drop-hint'>Нажмите для замены</div>
           `;
           drop.classList.add('has-image');
         };
@@ -883,15 +1044,15 @@ if (isset($_GET['admin'])):
 
         if (type === 'logo') {
           drop.querySelector('.drop-content').innerHTML = `
-            <div class="drop-icon">🖼️</div>
-            <div class="drop-text">Загрузить логотип</div>
-            <div class="drop-hint">PNG, JPG, SVG до 10 МБ</div>
+            <div class='drop-icon'>🖼️</div>
+            <div class='drop-text'>Загрузить логотип</div>
+            <div class='drop-hint'>PNG, JPG, SVG до 10 МБ</div>
           `;
         } else {
           drop.querySelector('.drop-content').innerHTML = `
-            <div class="drop-icon">🎨</div>
-            <div class="drop-text">Загрузить hero изображение</div>
-            <div class="drop-hint">PNG, JPG до 10 МБ</div>
+            <div class='drop-icon'>🎨</div>
+            <div class='drop-text'>Загрузить hero изображение</div>
+            <div class='drop-hint'>PNG, JPG до 10 МБ</div>
           `;
         }
 
@@ -965,7 +1126,7 @@ $accentCol = $T['accent'];
 $seoTitle = $cfg['seo']['title'] ?: ($cfg['brand'] . ' — типография | Фото 5 минут');
 $seoDescription = $cfg['seo']['description'] ?: ('Типография и фотоцентр: визитки, баннеры, листовки, фото на документы 5 минут. Красных Фортов, 49. Тел. ' . $cfg['phone_display']);
 $seoKeywords = $cfg['seo']['keywords'] ?: 'печать, типография, фотоцентр, визитки, баннеры, фото на документы, Сосновый Бор';
-$ogImage = $cfg['seo']['og_image'] ?: ('data:image/svg+xml;base64,' . base64_encode('<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'1200\' height=\'630\'><rect fill=\'#fff\' width=\'100%\' height=\'100%\'/><text x=\'50%\' y=\'54%\' fill=\'#000\' font-size=\'62\' font-family=\'Arial,sans-serif\' text-anchor=\'middle\'>'.$cfg['brand'].'</text></svg>'));
+$ogImage = $cfg['seo']['og_image'] ?: ('data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630"><rect fill="#fff" width="100%" height="100%"/><text x="50%" y="54%" fill="#000" font-size="62" font-family="Arial,sans-serif" text-anchor="middle">'.$cfg['brand'].'</text></svg>'));
 ?>
 <!doctype html>
 <html lang='ru'>
@@ -1283,30 +1444,30 @@ $ogImage = $cfg['seo']['og_image'] ?: ('data:image/svg+xml;base64,' . base64_enc
         'Печать на холсте'=>'Натяжка на подрамник, по желанию защитный лак.'
       ];
       function icon_svg($key){
-        $defs = '<defs><linearGradient id=\'ico\' x1=\'0\' y1=\'0\' x2=\'1\' y2=\'1\'><stop offset=\'0\' stop-color=\'#FF8A00\'/><stop offset=\'1\' stop-color=\'#FFB14D\'/></linearGradient></defs>';
-        $bg = '<circle cx=\'32\' cy=\'32\' r=\'30\' fill=\'rgba(0,0,0,.04)\' stroke=\'rgba(0,0,0,.06)\' />';
-        $style = 'stroke=\'url(#ico)\' stroke-width=\'2.2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' fill=\'none\'';
+        $defs = '<defs><linearGradient id="ico" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF8A00"/><stop offset="1" stop-color="#FFB14D"/></linearGradient></defs>';
+        $bg = '<circle cx="32" cy="32" r="30" fill="rgba(0,0,0,.04)" stroke="rgba(0,0,0,.06)" />';
+        $style = 'stroke="url(#ico)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"';
         $map = [
-          'id-card'=>'<rect x=\'14\' y=\'18\' width=\'36\' height=\'28\' rx=\'4\' '.$style.'/><circle cx=\'24\' cy=\'30\' r=\'3\' '.$style.'/><path d=\'M22 36h8\' '.$style.'/><path d=\'M34 26h10M34 31h10M34 36h8\' '.$style.'/>',
-          'docs'=>'<rect x=\'18\' y=\'14\' width=\'28\' height=\'36\' rx=\'4\' '.$style.'/><path d=\'M22 24h20M22 30h14M22 36h12\' '.$style.'/>',
-          'cards'=>'<rect x=\'12\' y=\'22\' width=\'40\' height=\'20\' rx=\'4\' '.$style.'/><path d=\'M12 28h40\' '.$style.'/>',
-          'flyer'=>'<rect x=\'18\' y=\'14\' width=\'16\' height=\'36\' rx=\'3\' '.$style.'/><rect x=\'30\' y=\'20\' width=\'16\' height=\'30\' rx=\'3\' '.$style.'/>',
-          'banner'=>'<rect x=\'12\' y=\'20\' width=\'40\' height=\'16\' rx=\'3\' '.$style.'/><path d=\'M16 36v6M40 36v6\' '.$style.'/>',
-          'poster'=>'<rect x=\'16\' y=\'12\' width=\'32\' height=\'40\' rx=\'4\' '.$style.'/><circle cx=\'32\' cy=\'30\' r=\'6\' '.$style.'/>',
-          'photo'=>'<rect x=\'12\' y=\'16\' width=\'40\' height=\'32\' rx=\'4\' '.$style.'/><circle cx=\'26\' cy=\'30\' r=\'4\' '.$style.'/><path d=\'M30 36l4-4 8 8\' '.$style.'/>',
-          'sticker'=>'<path d=\'M20 16h16a8 8 0 0 1 8 8v16H28a8 8 0 0 1-8-8V16z\' '.$style.'/><path d=\'M44 24v16\' '.$style.'/>',
-          'tshirt'=>'<path d=\'M24 18l8-4 8 4 6-4 4 8-6 4v16a4 4 0 0 1-4 4H28a4 4 0 0 1-4-4V26l-6-4 4-8z\' '.$style.'/>',
-          'mug'=>'<rect x=\'16\' y=\'22\' width=\'18\' height=\'22\' rx=\'4\' '.$style.'/><path d=\'M34 26h6a6 6 0 0 1 0 12h-6\' '.$style.'/>',
-          'lam'=>'<rect x=\'14\' y=\'24\' width=\'36\' height=\'16\' rx=\'4\' '.$style.'/><rect x=\'20\' y=\'28\' width=\'24\' height=\'8\' rx=\'3\' '.$style.'/>',
-          'stamp'=>'<path d=\'M32 14a6 6 0 0 1 6 6c0 2.4-1.4 4.4-3.4 5.4L36 32H28l1.4-6.6A6 6 0 0 1 26 20a6 6 0 0 1 6-6z\' '.$style.'/><rect x=\'18\' y=\'34\' width=\'28\' height=\'6\' rx=\'2\' '.$style.'/>',
-          'film'=>'<rect x=\'14\' y=\'16\' width=\'36\' height=\'32\' rx=\'4\' '.$style.'/><path d=\'M24 16v32M40 16v32M14 24h36M14 32h36\' '.$style.'/>',
-          'develop'=>'<rect x=\'16\' y=\'18\' width=\'32\' height=\'28\' rx=\'4\' '.$style.'/><circle cx=\'32\' cy=\'32\' r=\'6\' '.$style.'/>',
-          'copy'=>'<rect x=\'18\' y=\'16\' width=\'20\' height=\'32\' rx=\'4\' '.$style.'/><rect x=\'28\' y=\'20\' width=\'20\' height=\'28\' rx=\'4\' '.$style.'/>',
-          'canvas'=>'<rect x=\'16\' y=\'18\' width=\'32\' height=\'24\' rx=\'3\' '.$style.'/><path d=\'M24 18v-6M40 18v-6M22 42h20\' '.$style.'/>',
-          'poster2'=>'<rect x=\'16\' y=\'12\' width=\'32\' height=\'40\' rx=\'4\' '.$style.'/>'
+          'id-card'=>'<rect x="14" y="18" width="36" height="28" rx="4" '.$style.'/><circle cx="24" cy="30" r="3" '.$style.'/><path d="M22 36h8" '.$style.'/><path d="M34 26h10M34 31h10M34 36h8" '.$style.'/>',
+          'docs'=>'<rect x="18" y="14" width="28" height="36" rx="4" '.$style.'/><path d="M22 24h20M22 30h14M22 36h12" '.$style.'/>',
+          'cards'=>'<rect x="12" y="22" width="40" height="20" rx="4" '.$style.'/><path d="M12 28h40" '.$style.'/>',
+          'flyer'=>'<rect x="18" y="14" width="16" height="36" rx="3" '.$style.'/><rect x="30" y="20" width="16" height="30" rx="3" '.$style.'/>',
+          'banner'=>'<rect x="12" y="20" width="40" height="16" rx="3" '.$style.'/><path d="M16 36v6M40 36v6" '.$style.'/>',
+          'poster'=>'<rect x="16" y="12" width="32" height="40" rx="4" '.$style.'/><circle cx="32" cy="30" r="6" '.$style.'/>',
+          'photo'=>'<rect x="12" y="16" width="40" height="32" rx="4" '.$style.'/><circle cx="26" cy="30" r="4" '.$style.'/><path d="M30 36l4-4 8 8" '.$style.'/>',
+          'sticker'=>'<path d="M20 16h16a8 8 0 0 1 8 8v16H28a8 8 0 0 1-8-8V16z" '.$style.'/><path d="M44 24v16" '.$style.'/>',
+          'tshirt'=>'<path d="M24 18l8-4 8 4 6-4 4 8-6 4v16a4 4 0 0 1-4 4H28a4 4 0 0 1-4-4V26l-6-4 4-8z" '.$style.'/>',
+          'mug'=>'<rect x="16" y="22" width="18" height="22" rx="4" '.$style.'/><path d="M34 26h6a6 6 0 0 1 0 12h-6" '.$style.'/>',
+          'lam'=>'<rect x="14" y="24" width="36" height="16" rx="4" '.$style.'/><rect x="20" y="28" width="24" height="8" rx="3" '.$style.'/>',
+          'stamp'=>'<path d="M32 14a6 6 0 0 1 6 6c0 2.4-1.4 4.4-3.4 5.4L36 32H28l1.4-6.6A6 6 0 0 1 26 20a6 6 0 0 1 6-6z" '.$style.'/><rect x="18" y="34" width="28" height="6" rx="2" '.$style.'/>',
+          'film'=>'<rect x="14" y="16" width="36" height="32" rx="4" '.$style.'/><path d="M24 16v32M40 16v32M14 24h36M14 32h36" '.$style.'/>',
+          'develop'=>'<rect x="16" y="18" width="32" height="28" rx="4" '.$style.'/><circle cx="32" cy="32" r="6" '.$style.'/>',
+          'copy'=>'<rect x="18" y="16" width="20" height="32" rx="4" '.$style.'/><rect x="28" y="20" width="20" height="28" rx="4" '.$style.'/>',
+          'canvas'=>'<rect x="16" y="18" width="32" height="24" rx="3" '.$style.'/><path d="M24 18v-6M40 18v-6M22 42h20" '.$style.'/>',
+          'poster2'=>'<rect x="16" y="12" width="32" height="40" rx="4" '.$style.'/>'
         ];
         $p = $map[$key] ?? $map['poster2'];
-        return '<svg width=\'80\' height=\'80\' viewBox=\'0 0 64 64\' xmlns=\'http://www.w3.org/2000/svg\'>'.$defs.$bg.$p.'</svg>';
+        return '<svg width="80" height="80" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">'.$defs.$bg.$p.'</svg>';
       }
     ?>
     <?php foreach($services as $s): $title=$s[0]; $price=$s[1]; $key=$s[2]; ?>
@@ -1323,7 +1484,7 @@ $ogImage = $cfg['seo']['og_image'] ?: ('data:image/svg+xml;base64,' . base64_enc
           <?php if($key==='id-card'): ?>
             <a class='btn btn-outline' target='_blank' href='https://printc47.ru/public/photoconstructor.html'>🖼️ Фото онлайн</a>
           <?php endif; ?>
-          <button class='btn btn-outline' onclick='showInfo("<?=esc($title)?>")'>Подробнее</button>
+          <button class='btn btn-outline' onclick='showInfo("<?=esc($title)?>')">Подробнее</button>
         </div>
       </div>
     <?php endforeach; ?>
@@ -1611,10 +1772,13 @@ $ogImage = $cfg['seo']['og_image'] ?: ('data:image/svg+xml;base64,' . base64_enc
       st.className=j.ok?'ok':'bad';
       if(j.ok){
         if(j.payment && j.payment_url) {
-          window.open(j.payment_url, '_blank');
+          st.textContent += ' Переходим к оплате...';
+          setTimeout(() => {
+            window.open(j.payment_url, '_blank');
+          }, 1000);
         }
         e.currentTarget.reset();
-        setTimeout(()=>document.getElementById('orderModal').close(),1200);
+        setTimeout(()=>document.getElementById('orderModal').close(),j.payment ? 3000 : 1200);
       }
     }catch(_){ st.textContent='Сбой сети. Попробуйте позже.'; st.className='bad'; }
   });
