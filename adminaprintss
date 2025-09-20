@@ -1,0 +1,1300 @@
+<?php
+mb_internal_encoding('UTF-8');
+date_default_timezone_set('Europe/Moscow');
+session_start();
+
+/* Paths */
+$BASE = __DIR__;
+$uploadsDir = $BASE.'/uploads';
+$ordersLog  = $BASE.'/orders.txt';
+$configFile = $BASE.'/config.json';
+$productsFile = $BASE.'/products.json';
+$chatLog = $BASE.'/chat_log.txt';
+$aiKnowledgeFile = $BASE.'/ai_knowledge.json';
+
+/* FS init */
+if (!is_dir($uploadsDir)) @mkdir($uploadsDir, 0775, true);
+if (!file_exists($uploadsDir.'/.htaccess')) {
+  @file_put_contents($uploadsDir.'/.htaccess', 'php_flag engine off\nOptions -ExecCGI\n<FilesMatch \'\\.(php|phar|phtml|cgi|pl|py)$\'>\nDeny from all\n</FilesMatch>\n');
+}
+if (!file_exists($ordersLog)) @file_put_contents($ordersLog, '');
+if (!file_exists($chatLog)) @file_put_contents($chatLog, '');
+
+/* Config */
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+$siteURL = $scheme.$host;
+
+$defaultConfig = [
+  'brand'         => 'Копировальный фотоцентр ПРИНТСС',
+  'slogan'        => 'Печать в Сосновом Бору — ул. Красных Фортов, 49 (рядом с OZON и Саша Суши)',
+  'hero'          => 'Фото на документы — 5 минут (электронный вид бесплатно)',
+  'phone_display' => '+7 (952) 200-39-90',
+  'phone_raw'     => '+79522003990',
+  'email_to'      => 'artcopy78@bk.ru',
+  'email_from'    => 'noreply@'.preg_replace('~^www\.~','',$host),
+  'email_cc'      => '',
+  'email_bcc'     => '',
+  'email_reply'   => '',
+  'address'       => 'Россия, Ленинградская обл., Сосновый Бор, ул. Красных Фортов, 49',
+  'workhours'     => ['Пн–Пт 10:00–20:00', 'Сб–Вс 11:00–18:00'],
+  'site'          => $siteURL,
+  'logo'          => '',
+  'hero_mode'     => 'svg',
+  'hero_image'    => '',
+  'catalog_desc'  => 'Каталог услуг нашей типографии и фотоцентра. Быстро, рядом, по-честным ценам.',
+  'seo' => [
+    'title'       => 'Копировальный фотоцентр ПРИНТСС — типография | Фото 5 минут',
+    'description' => 'Типография и фотоцентр: визитки, баннеры, листовки, фото на документы 5 минут. Красных Фортов, 49. Тел. +7 (952) 200-39-90',
+    'keywords'    => 'печать, типография, фотоцентр, визитки, баннеры, фото на документы, Сосновый Бор',
+    'og_image'    => '',
+    'sitemap_enable' => true,
+  ],
+  'business' => [
+    'show_requisites' => true,
+    'show_payment_icons' => true,
+    'legal_name' => 'ИП Гурбанова Галина Александровна',
+    'inn' => '',
+    'ogrn' => '',
+    'bank' => '',
+    'bik' => '',
+    'account' => '',
+  ],
+  'yukassa' => [
+    'enabled'  => false,
+    'shop_id'  => '',
+    'secret_key' => '',
+    'test_mode' => true,
+    'return_url' => $siteURL . '/payment_result',
+  ],
+  'theme' => [
+    'mode'         => 'light',
+    'bg'           => '#f3f7ff',
+    'text'         => '#0e1220',
+    'muted'        => '#5c6b84',
+    'brand'        => '#FF8A00',
+    'accent'       => '#2D5BFF',
+    'card_opacity' => 0.65,
+    'blur'         => 12,
+    'radius'       => 16,
+    'shadow'       => 0.12,
+    'container'    => 1200
+  ],
+  'telegram'      => [
+    'enabled' => true,
+    'token'   => '8385005974:AAHhQkvdKP5LJSbSI-pge_TGefgcYDLTBZw',
+    'chat'    => ''
+  ],
+  'smtp' => [
+    'enabled' => false,
+    'host'    => 'smtp.mail.ru',
+    'port'    => 465,
+    'secure'  => 'ssl',
+    'user'    => 'artcopy78@bk.ru',
+    'pass'    => ''
+  ],
+  'admin_pass' => 'printss49',
+  'features' => [
+    'reviews_enabled' => true,
+    'callback_widget' => true,
+    'price_alerts' => true,
+    'loyalty_program' => false,
+  ],
+  'social' => [
+    'vk' => '',
+    'instagram' => '',
+    'youtube' => '',
+    'whatsapp' => '+79522003990',
+    'telegram_channel' => '',
+  ]
+];
+
+if (!file_exists($configFile)) @file_put_contents($configFile, json_encode($defaultConfig, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+$cfg = json_decode(@file_get_contents($configFile), true);
+if (!is_array($cfg)) $cfg = $defaultConfig;
+$cfg = array_replace_recursive($defaultConfig, $cfg);
+
+// Загружаем товары
+$products = json_decode(@file_get_contents($productsFile), true) ?? [];
+
+/* Helpers */
+function esc($s){ return htmlspecialchars((string)$s, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
+function sanitize_text($s){ return trim(filter_var($s, FILTER_SANITIZE_FULL_SPECIAL_CHARS)); }
+function sanitize_hex($s){ $s=trim((string)$s); if($s==='') return ''; if($s[0]!=='#') $s='#'.$s; if(!preg_match('~^#[0-9a-fA-F]{3,8}$~',$s)) return '#000000'; return $s; }
+function clamp_float($v,$min,$max,$def){ $v=(float)$v; if(!is_finite($v)) return $def; return max($min, min($max, $v)); }
+function clamp_int($v,$min,$max,$def){ $v=(int)$v; if(!is_finite($v)) return $def; return max($min, min($max, $v)); }
+
+function save_upload_general($field, $uploadsDir, $allowExt){
+  if (!isset($_FILES[$field]) || !is_uploaded_file($_FILES[$field]['tmp_name'])) return null;
+  $name = preg_replace('~[^a-zA-Z0-9_\.-]+~u','-', $_FILES[$field]['name']);
+  $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+  if (!in_array($ext, $allowExt)) throw new Exception('Недопустимый формат: '.esc($ext));
+  if ($_FILES[$field]['size'] > 100*1024*1024) throw new Exception('Файл слишком большой (макс. 100 МБ).');
+  $newName = date('Ymd-His').'-'.bin2hex(random_bytes(3)).'-'.$name;
+  $dest = $uploadsDir.'/'.$newName;
+  if (!move_uploaded_file($_FILES[$field]['tmp_name'], $dest)) throw new Exception('Не удалось сохранить файл.');
+  return $newName;
+}
+
+function save_upload_image($field, $uploadsDir){
+  $allowed = ['jpg','jpeg','png','webp','svg'];
+  return save_upload_general($field, $uploadsDir, $allowed);
+}
+
+function log_order($path, $data){
+  @file_put_contents($path, '['.date('Y-m-d H:i:s').'] '.json_encode($data, JSON_UNESCAPED_UNICODE).PHP_EOL, FILE_APPEND);
+}
+
+/* Telegram API */
+function tg_api($token,$method,$params=[],$multipart=false){
+  $url="https://api.telegram.org/bot$token/$method";
+  $ch=curl_init($url);
+  curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
+  curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,10);
+  curl_setopt($ch,CURLOPT_TIMEOUT,20);
+  if($multipart){ curl_setopt($ch,CURLOPT_POSTFIELDS,$params); }
+  else{ curl_setopt($ch,CURLOPT_POSTFIELDS,http_build_query($params)); }
+  $resp=curl_exec($ch); $err=curl_error($ch); curl_close($ch);
+  if($err) throw new Exception('Telegram CURL: '.$err);
+  $j=json_decode($resp,true);
+  if(!$j || empty($j['ok'])) throw new Exception('Telegram API: '.$resp);
+  return $j['result'] ?? true;
+}
+
+function require_admin($cfg){
+  if(empty($_SESSION['is_admin'])){ header('Location: ?login=1'); exit; }
+}
+
+/* Обработка запросов */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+  if (isset($_POST['admin_login'])){
+    $pass=$_POST['password']??''; 
+    if(hash_equals($cfg['admin_pass'],$pass)){ 
+      $_SESSION['is_admin']=true; 
+      header('Location: admin.php'); 
+    }
+    else { 
+      header('Location: admin.php?login=1&err=1'); 
+    }
+    exit;
+  }
+
+  require_admin($cfg);
+
+  if (isset($_POST['admin_save'])){
+    $new=$cfg;
+    foreach(['brand','slogan','hero','phone_display','phone_raw','email_to','email_from','email_cc','email_bcc','email_reply','address','hero_mode','hero_image','catalog_desc'] as $f){
+      if(isset($_POST[$f])) $new[$f]=trim($_POST[$f]);
+    }
+    if(isset($_POST['workhours'])){
+      $wh=array_filter(array_map('trim', explode("\n", str_replace("\r",'',$_POST['workhours']))));
+      if($wh) $new['workhours']=array_values($wh);
+    }
+    if(!empty($_POST['admin_pass'])) $new['admin_pass']=$_POST['admin_pass'];
+
+    if(isset($_POST['seo']) && is_array($_POST['seo'])){
+      $new['seo']['title'] = trim($_POST['seo']['title'] ?? $new['seo']['title']);
+      $new['seo']['description'] = trim($_POST['seo']['description'] ?? $new['seo']['description']);
+      $new['seo']['keywords'] = trim($_POST['seo']['keywords'] ?? $new['seo']['keywords']);
+      $new['seo']['og_image'] = trim($_POST['seo']['og_image'] ?? $new['seo']['og_image']);
+      $new['seo']['sitemap_enable'] = !empty($_POST['seo']['sitemap_enable']);
+    }
+
+    if(isset($_POST['business']) && is_array($_POST['business'])){
+      $new['business']['show_requisites'] = !empty($_POST['business']['show_requisites']);
+      $new['business']['show_payment_icons'] = !empty($_POST['business']['show_payment_icons']);
+      $new['business']['legal_name'] = trim($_POST['business']['legal_name'] ?? $new['business']['legal_name']);
+      $new['business']['inn'] = trim($_POST['business']['inn'] ?? $new['business']['inn']);
+      $new['business']['ogrn'] = trim($_POST['business']['ogrn'] ?? $new['business']['ogrn']);
+      $new['business']['bank'] = trim($_POST['business']['bank'] ?? $new['business']['bank']);
+      $new['business']['bik'] = trim($_POST['business']['bik'] ?? $new['business']['bik']);
+      $new['business']['account'] = trim($_POST['business']['account'] ?? $new['business']['account']);
+    }
+
+    if(isset($_POST['social']) && is_array($_POST['social'])){
+      foreach(['vk','instagram','youtube','whatsapp','telegram_channel'] as $s) {
+        $new['social'][$s] = trim($_POST['social'][$s] ?? $new['social'][$s]);
+      }
+    }
+
+    if(isset($_POST['yukassa']) && is_array($_POST['yukassa'])){
+      $new['yukassa']['enabled'] = !empty($_POST['yukassa']['enabled']);
+      $new['yukassa']['shop_id'] = trim($_POST['yukassa']['shop_id'] ?? $new['yukassa']['shop_id']);
+      $new['yukassa']['test_mode'] = !empty($_POST['yukassa']['test_mode']);
+      $new['yukassa']['return_url'] = trim($_POST['yukassa']['return_url'] ?? $new['yukassa']['return_url']);
+      if(isset($_POST['yukassa']['secret_key']) && $_POST['yukassa']['secret_key'] !== '__KEEP__') {
+        $new['yukassa']['secret_key'] = $_POST['yukassa']['secret_key'];
+      }
+    }
+
+    $new['smtp']['enabled']=!empty($_POST['smtp_enabled']);
+    $new['smtp']['host']=trim($_POST['smtp_host']??$new['smtp']['host']);
+    $new['smtp']['port']=(int)($_POST['smtp_port']??$new['smtp']['port']);
+    $new['smtp']['secure']=in_array($_POST['smtp_secure']??'ssl',['ssl','tls','none'])?$_POST['smtp_secure']:'ssl';
+    $new['smtp']['user']=trim($_POST['smtp_user']??$new['smtp']['user']);
+    if(isset($_POST['smtp_pass']) && $_POST['smtp_pass']!=='__KEEP__') $new['smtp']['pass']=$_POST['smtp_pass'];
+
+    $new['telegram']['enabled']=!empty($_POST['tg_enabled']);
+    $new['telegram']['token']=trim($_POST['tg_token']??$new['telegram']['token']);
+    $new['telegram']['chat']=trim($_POST['tg_chat']??$new['telegram']['chat']);
+
+    if(isset($_POST['theme']) && is_array($_POST['theme'])){
+      $t=$new['theme'];
+      $t['mode']  = in_array(($_POST['theme']['mode']??'light'),['light','dark'])?$_POST['theme']['mode']:'light';
+      $t['bg']    = sanitize_hex($_POST['theme']['bg']   ?? $t['bg']);
+      $t['text']  = sanitize_hex($_POST['theme']['text'] ?? $t['text']);
+      $t['muted'] = sanitize_hex($_POST['theme']['muted']?? $t['muted']);
+      $t['brand'] = sanitize_hex($_POST['theme']['brand']?? $t['brand']);
+      $t['accent']= sanitize_hex($_POST['theme']['accent']??$t['accent']);
+      $t['card_opacity']= clamp_float($_POST['theme']['card_opacity']??$t['card_opacity'], 0.3, 1.0, 0.65);
+      $t['blur']  = clamp_int($_POST['theme']['blur']??$t['blur'], 0, 30, 12);
+      $t['radius']= clamp_int($_POST['theme']['radius']??$t['radius'], 0, 28, 16);
+      $t['shadow']= clamp_float($_POST['theme']['shadow']??$t['shadow'], 0, 0.5, 0.12);
+      $t['container']= clamp_int($_POST['theme']['container']??$t['container'], 900, 1400, 1200);
+      $new['theme']=$t;
+    }
+
+    @file_put_contents($configFile, json_encode($new, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+    header('Location: admin.php?saved=1'); exit;
+  }
+
+  if (isset($_POST['admin_upload'])){
+    try{
+      $what=$_POST['what']??'';
+      if($what==='logo'){
+        $fn=save_upload_image('file',$uploadsDir);
+        $cfg['logo']='/uploads/'.$fn;
+      } elseif($what==='hero'){
+        $fn=save_upload_image('file',$uploadsDir);
+        $cfg['hero_mode']='image';
+        $cfg['hero_image']='/uploads/'.$fn;
+      } else { throw new Exception('Неизвестный тип загрузки'); }
+      @file_put_contents($configFile, json_encode($cfg, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+      header('Location: admin.php?saved=1'); exit;
+    }catch(Exception $e){
+      header('Location: admin.php?err='.urlencode($e->getMessage())); exit;
+    }
+  }
+
+  // Сохранение товара
+  if (isset($_POST['save_product'])) {
+    try {
+      $id = (int)($_POST['id'] ?? 0);
+      $name = sanitize_text($_POST['name'] ?? '');
+      $price = max(0, (int)($_POST['price'] ?? 0));
+      $old_price = max(0, (int)($_POST['old_price'] ?? 0));
+      $category = sanitize_text($_POST['category'] ?? 'frames');
+      $description = sanitize_text($_POST['description'] ?? '');
+      $enabled = !empty($_POST['enabled']);
+      $featured = !empty($_POST['featured']);
+      $stock = max(0, (int)($_POST['stock'] ?? 0));
+
+      if (!$name || !$price) throw new Exception('Укажите название и цену.');
+
+      $image = '';
+      if (!empty($_FILES['image']['name'])) {
+        $image = save_upload_image('image', $uploadsDir);
+      } else {
+        // Сохраняем старое изображение
+        foreach ($products as $p) {
+          if ($p['id'] == $id) {
+            $image = $p['image'] ?? '';
+            break;
+          }
+        }
+      }
+
+      $newProduct = [
+        'id' => $id ?: (count($products) > 0 ? max(array_column($products, 'id')) + 1 : 1),
+        'name' => $name,
+        'price' => $price,
+        'old_price' => $old_price,
+        'category' => $category,
+        'image' => $image,
+        'description' => $description,
+        'enabled' => $enabled,
+        'featured' => $featured,
+        'stock' => $stock
+      ];
+
+      if ($id) {
+        // Обновление существующего
+        foreach ($products as $key => $p) {
+          if ($p['id'] == $id) {
+            $products[$key] = $newProduct;
+            break;
+          }
+        }
+      } else {
+        // Новый товар
+        $products[] = $newProduct;
+      }
+
+      @file_put_contents($productsFile, json_encode($products, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+      header('Location: admin.php?product_saved=1');
+      exit;
+
+    } catch (Exception $e) {
+      header('Location: admin.php?error=' . urlencode($e->getMessage()));
+      exit;
+    }
+  }
+
+  // Удаление товара
+  if (isset($_POST['delete_product'])) {
+    $id = (int)($_POST['id'] ?? 0);
+    foreach ($products as $key => $p) {
+      if ($p['id'] == $id) {
+        // Удаляем изображение
+        if ($p['image'] && file_exists($uploadsDir . '/' . $p['image'])) {
+          @unlink($uploadsDir . '/' . $p['image']);
+        }
+        unset($products[$key]);
+        break;
+      }
+    }
+    $products = array_values($products);
+    @file_put_contents($productsFile, json_encode($products, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+    header('Location: admin.php?product_deleted=1');
+    exit;
+  }
+
+  if (isset($_POST['admin_test_email'])){ 
+    $testResult = @mail($cfg['email_to'], 'Тест админки', 'Тест отправки почты '.date('Y-m-d H:i:s')); 
+    header('Location: admin.php?test_email='.($testResult?'ok':'fail')); 
+    exit; 
+  }
+
+  if (isset($_POST['admin_test_tg'])){ 
+    try{ 
+      tg_api($cfg['telegram']['token'],'sendMessage',['chat_id'=>$cfg['telegram']['chat'],'text'=>'Тест Telegram '.date('Y-m-d H:i:s')]); 
+      header('Location: admin.php?test_tg=ok'); 
+    }
+    catch(Throwable $e){ 
+      header('Location: admin.php?test_tg=fail'); 
+    } 
+    exit; 
+  }
+
+  if (isset($_POST['tg_delete_webhook'])){ 
+    try{ tg_api($cfg['telegram']['token'],'deleteWebhook'); header('Location: admin.php?tg_webhook=deleted'); }
+    catch(Throwable $e){ header('Location: admin.php?tg_webhook=err'); } 
+    exit;
+  }
+
+  if (isset($_POST['tg_get_updates'])){ 
+    $_SESSION['tg_updates'] = null;
+    try{ $res = tg_api($cfg['telegram']['token'],'getUpdates', ['timeout'=>0]); $_SESSION['tg_updates']=$res; header('Location: admin.php?tg_updates=ok'); }
+    catch(Throwable $e){ header('Location: admin.php?tg_updates=err'); }
+    exit;
+  }
+
+  if (isset($_POST['tg_use_chat'])){ 
+    $chat = trim($_POST['chat']??'');
+    if ($chat!==''){ $cfg['telegram']['chat']=$chat; @file_put_contents($configFile, json_encode($cfg, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)); header('Location: admin.php?tg_chat=saved'); }
+    else { header('Location: admin.php?tg_chat=err'); }
+    exit;
+  }
+}
+
+$isLogin = !isset($_SESSION['is_admin']);
+?><!doctype html>
+<html lang='ru'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Админ — <?=esc($cfg['brand'])?></title>
+  <style>
+    :root{--bg:#0f1115;--panel:#151a22;--muted:#a7b0c0;--brand:#FFD400;--accent:#2D5BFF;--ok:#66e38a;--bad:#ff7a7a;--text:#e9eef7}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Arial,Roboto;line-height:1.4}
+    .wrap{max-width:1200px;margin:0 auto;padding:16px}
+    .card{background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px;margin-bottom:16px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media(max-width:980px){.row{grid-template-columns:1fr}}
+    input,textarea,select{width:100%;background:#121825;border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:8px;padding:10px;box-sizing:border-box;font-size:14px}
+    input:focus,textarea:focus,select:focus{border-color:var(--accent);outline:none}
+    .btn{background:linear-gradient(90deg,var(--accent),#00c2ff);border:none;color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;margin-right:8px;margin-bottom:8px;font-size:14px;font-weight:500}
+    .btn:hover{opacity:0.9;transform:translateY(-1px)}
+    .btn-danger{background:linear-gradient(90deg,#ff4757,#ff6b7a)}
+    .btn-success{background:linear-gradient(90deg,#2ed573,#55eaa3)}
+    .btn2{background:#1b2232;border:1px solid rgba(255,255,255,.15);color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:14px}
+    .btn2:hover{background:#252b3a}
+    .muted{color:var(--muted);font-size:13px}
+    .ok{color:var(--ok);font-weight:600} 
+    .bad{color:var(--bad);font-weight:600}
+    .tabs{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+    .tab{background:#1b2232;border:1px solid rgba(255,255,255,.15);color:#fff;padding:12px 18px;border-radius:8px;cursor:pointer;text-decoration:none;font-size:14px;font-weight:500}
+    .tab:hover{background:#252b3a}
+    .tab.active{background:var(--accent);border-color:var(--accent)}
+    .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:16px}
+    .product-card{background:#1e2530;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:16px;position:relative}
+    .product-image{width:100%;height:160px;background:#0f1624;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:12px}
+    .product-image img{width:100%;height:100%;object-fit:cover}
+    .badge{display:inline-block;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;margin-right:6px;text-transform:uppercase}
+    .badge-success{background:#2ed573;color:#000}
+    .badge-danger{background:#ff4757;color:#fff}
+    .badge-warning{background:#ffa502;color:#000}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;font-size:13px}
+    th{background:rgba(255,255,255,.05);font-weight:600}
+    .form-group{margin-bottom:16px}
+    .form-group label{display:block;margin-bottom:6px;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:0.5px}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media(max-width:768px){.form-row{grid-template-columns:1fr}}
+    .mini{font-size:12px}
+    .flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+    /* Умные загрузчики */
+    .drop{position:relative;display:grid;place-items:center;min-height:120px;border:2px dashed rgba(255,255,255,.25);border-radius:10px;background:#0f1624;cursor:pointer;transition:all 0.3s}
+    .drop.hover{background:#0c1220;border-color:var(--brand)}
+    .drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+    .drop-content{text-align:center;pointer-events:none}
+    .drop-icon{font-size:28px;margin-bottom:8px;opacity:0.7}
+    .drop-text{font-size:13px;font-weight:600;margin-bottom:4px}
+    .drop-hint{font-size:11px;opacity:0.6}
+    .drop.has-image{border-style:solid;border-color:var(--brand)}
+    .drop-preview{max-width:100%;max-height:90px;border-radius:6px;margin-bottom:8px}
+    .drop-remove{position:absolute;top:8px;right:8px;background:rgba(255,0,0,.8);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:12px;display:none}
+    .drop.has-image .drop-remove{display:block}
+
+    .alert{padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:14px}
+    .alert-success{background:#1a4d3a;border:1px solid #2ed573;color:#66e38a}
+    .alert-danger{background:#4d1a1a;border:1px solid #ff4757;color:#ff7a7a}
+    .alert-info{background:#1a2d4d;border:1px solid #2d5bff;color:#7aa7ff}
+
+    .stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
+    .stat-card{background:#1e2530;padding:16px;border-radius:10px;text-align:center}
+    .stat-number{font-size:24px;font-weight:700;color:var(--brand)}
+    .stat-label{font-size:12px;color:var(--muted);text-transform:uppercase}
+    @media(max-width:768px){.stats-bar{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:480px){.stats-bar{grid-template-columns:1fr}}
+  </style>
+  <meta name='robots' content='noindex,nofollow'>
+</head>
+<body>
+  <div class='wrap'>
+    <h1>🏪 Админ — <?=esc($cfg['brand'])?></h1>
+
+    <?php if ($isLogin): ?>
+      <div class='card'>
+        <h3>Вход</h3>
+        <?php if(isset($_GET['err'])): ?><div class='alert alert-danger'>Неверный пароль</div><?php endif; ?>
+        <form method='post'>
+          <div class='form-group'>
+            <label>Пароль</label>
+            <input type='password' name='password' placeholder='Введите пароль администратора' required>
+          </div>
+          <button class='btn' name='admin_login' value='1'>Войти</button>
+        </form>
+        <div class='muted mini' style='margin-top:8px'>Пароль по умолчанию: <?=esc($cfg['admin_pass'])?></div>
+      </div>
+    <?php else: ?>
+
+      <?php if (isset($_GET['saved'])): ?><div class='alert alert-success'>✅ Настройки сохранены!</div><?php endif; ?>
+      <?php if (isset($_GET['product_saved'])): ?><div class='alert alert-success'>✅ Товар сохранен!</div><?php endif; ?>
+      <?php if (isset($_GET['product_deleted'])): ?><div class='alert alert-success'>🗑️ Товар удален!</div><?php endif; ?>
+      <?php if (isset($_GET['error'])): ?><div class='alert alert-danger'>❌ <?=esc($_GET['error'])?></div><?php endif; ?>
+      <?php if (isset($_GET['err'])): ?><div class='alert alert-danger'>❌ <?=esc($_GET['err'])?></div><?php endif; ?>
+      <?php if (isset($_GET['test_email'])): ?><div class='alert alert-<?=($_GET['test_email']==='ok'?'success':'danger')?>'>Email: <?=($_GET['test_email']==='ok'?'✅ OK':'❌ Ошибка')?></div><?php endif; ?>
+      <?php if (isset($_GET['test_tg'])): ?><div class='alert alert-<?=($_GET['test_tg']==='ok'?'success':'danger')?>'>Telegram: <?=($_GET['test_tg']==='ok'?'✅ OK':'❌ Ошибка')?></div><?php endif; ?>
+
+      <!-- Статистика -->
+      <div class='stats-bar'>
+        <div class='stat-card'>
+          <div class='stat-number'><?=count($products)?></div>
+          <div class='stat-label'>Товаров</div>
+        </div>
+        <div class='stat-card'>
+          <div class='stat-number'><?php
+            $lines = @file($ordersLog, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) ?: [];
+            $productOrders = 0;
+            foreach($lines as $line){
+              if(preg_match('~^$$(.+?)$$ (.+)$~u', $line, $m)){
+                $j = json_decode($m[2], true);
+                if($j && ($j['type'] ?? '') === 'product') $productOrders++;
+              }
+            }
+            echo $productOrders;
+          ?></div>
+          <div class='stat-label'>Заказов товаров</div>
+        </div>
+        <div class='stat-card'>
+          <div class='stat-number'><?php
+            $totalOrders = 0;
+            foreach($lines as $line){
+              if(preg_match('~^$$(.+?)$$ (.+)$~u', $line, $m)){
+                $j = json_decode($m[2], true);
+                if($j) $totalOrders++;
+              }
+            }
+            echo $totalOrders;
+          ?></div>
+          <div class='stat-label'>Всего заказов</div>
+        </div>
+        <div class='stat-card'>
+          <div class='stat-number'><?=count(array_filter($products, fn($p) => $p['enabled']))?></div>
+          <div class='stat-label'>Активных товаров</div>
+        </div>
+      </div>
+
+      <!-- Вкладки -->
+      <div class='tabs'>
+        <a href='#orders' class='tab active' onclick='showTab("orders",this)'>📦 Заказы</a>
+        <a href='#products' class='tab' onclick='showTab("products",this)'>🛍️ Товары</a>
+        <a href='#settings' class='tab' onclick='showTab("settings",this)'>⚙️ Основные</a>
+        <a href='#advanced' class='tab' onclick='showTab("advanced",this)'>🔧 Интеграции</a>
+        <a href='#design' class='tab' onclick='showTab("design",this)'>🎨 Дизайн</a>
+        <a href='products.php' class='btn' target='_blank'>👁️ Магазин</a>
+        <a href='/' class='btn2' target='_blank'>🏠 Главная</a>
+      </div>
+
+      <!-- Заказы -->
+      <div id='tab-orders' class='tab-content'>
+        <div class='card'>
+          <h3>📦 Все заказы</h3>
+          <div class='muted'>Последние 100 заказов товаров и услуг</div>
+          <div style='max-height:600px;overflow:auto;margin-top:16px'>
+            <table>
+              <tr>
+                <th>Время</th>
+                <th>Тип</th>
+                <th>Клиент</th>
+                <th>Заказ</th>
+                <th>Сумма</th>
+                <th>Статус</th>
+              </tr>
+              <?php
+              $lines = array_slice(array_reverse($lines), 0, 100);
+              foreach($lines as $line){
+                if(!preg_match('~^$$(.+?)$$ (.+)$~u', $line, $m)) continue;
+                $ts = $m[1]; 
+                $j = json_decode($m[2], true);
+                if (!$j) continue;
+
+                $type = $j['type'] ?? 'order';
+                $typeIcon = $type === 'product' ? '🛍️' : ($type === 'callback' ? '📞' : '📋');
+
+                echo '<tr>';
+                echo '<td><small>'.esc(date('d.m H:i', strtotime($ts))).'</small></td>';
+                echo '<td>'.$typeIcon.'</td>';
+                echo '<td><strong>'.esc($j['name'] ?? '').'</strong><br><small>'.esc($j['phone'] ?? '').'</small></td>';
+
+                if ($type === 'product') {
+                  echo '<td>'.esc($j['product_name'] ?? '').'<br><small>'.esc($j['quantity'] ?? 1).' шт</small></td>';
+                  echo '<td><strong>'.number_format($j['total_price'] ?? 0, 0, ',', ' ').' ₽</strong></td>';
+                } elseif ($type === 'callback') {
+                  echo '<td>Обратный звонок<br><small>'.esc($j['preferred_time'] ?? '').'</small></td>';
+                  echo '<td>—</td>';
+                } else {
+                  echo '<td>'.esc($j['service'] ?? '').'</td>';
+                  echo '<td>'.esc($j['price'] ?? '—').'</td>';
+                }
+                echo '<td><span class="badge badge-warning">Новый</span></td>';
+                echo '</tr>';
+              }
+              ?>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Товары -->
+      <div id='tab-products' class='tab-content' style='display:none'>
+        <div class='card'>
+          <h3>➕ Создатель/редактор товаров</h3>
+
+          <form method='post' enctype='multipart/form-data'>
+            <input type='hidden' name='id' id='editId'>
+
+            <div class='form-row'>
+              <div class='form-group'>
+                <label>Название товара</label>
+                <input type='text' name='name' id='editName' required placeholder='Фоторамка деревянная 10×15'>
+              </div>
+              <div class='form-group'>
+                <label>Категория</label>
+                <select name='category' id='editCategory'>
+                  <option value='frames'>🖼️ Фоторамки</option>
+                  <option value='albums'>📚 Фотоальбомы</option>
+                  <option value='souvenirs'>🎁 Сувениры</option>
+                </select>
+              </div>
+            </div>
+
+            <div class='form-row'>
+              <div class='form-group'>
+                <label>Цена (₽)</label>
+                <input type='number' name='price' id='editPrice' min='0' required placeholder='450'>
+              </div>
+              <div class='form-group'>
+                <label>Старая цена (₽) — для скидки</label>
+                <input type='number' name='old_price' id='editOldPrice' min='0' placeholder='590'>
+              </div>
+            </div>
+
+            <div class='form-row'>
+              <div class='form-group'>
+                <label>Остаток на складе</label>
+                <input type='number' name='stock' id='editStock' min='0' value='10'>
+              </div>
+              <div class='form-group'>
+                <label>Изображение товара</label>
+                <input type='file' name='image' accept='image/*'>
+                <div class='muted mini'>JPG, PNG, WEBP до 5 МБ</div>
+              </div>
+            </div>
+
+            <div class='form-group'>
+              <label>Описание</label>
+              <textarea name='description' id='editDescription' rows='3' placeholder='Натуральное дерево, стекло, подставка в комплекте'></textarea>
+            </div>
+
+            <div class='form-row'>
+              <div class='form-group'>
+                <label><input type='checkbox' name='enabled' id='editEnabled' checked> Включен (доступен для заказа)</label>
+              </div>
+              <div class='form-group'>
+                <label><input type='checkbox' name='featured' id='editFeatured'> ⭐ Рекомендуемый (показать в топе)</label>
+              </div>
+            </div>
+
+            <div class='flex'>
+              <button type='submit' name='save_product' class='btn'>💾 Сохранить товар</button>
+              <button type='button' onclick='clearProductForm()' class='btn2'>🔄 Очистить форму</button>
+            </div>
+          </form>
+        </div>
+
+        <div class='card'>
+          <h3>📋 Управление товарами (<?=count($products)?>)</h3>
+          <div class='products-grid'>
+            <?php if (empty($products)): ?>
+              <div style='grid-column: 1/-1; text-align: center; padding: 40px; color: var(--muted);'>
+                <div style='font-size: 48px; margin-bottom: 16px;'>📦</div>
+                <h4>Товаров пока нет</h4>
+                <p>Добавьте первый товар с помощью формы выше</p>
+              </div>
+            <?php else: ?>
+              <?php foreach ($products as $product): ?>
+                <div class='product-card'>
+                  <div class='product-image'>
+                    <?php if ($product['image'] && file_exists($uploadsDir . '/' . $product['image'])): ?>
+                      <img src='uploads/<?=esc($product['image'])?>' alt='<?=esc($product['name'])?>'>
+                    <?php else: ?>
+                      <div style='color: #666; font-size: 32px;'>🖼️</div>
+                    <?php endif; ?>
+                  </div>
+
+                  <h4 style='margin-bottom: 8px; font-size: 15px;'><?=esc($product['name'])?></h4>
+                  <p class='muted' style='margin-bottom: 10px; font-size: 12px; line-height: 1.3;'><?=esc($product['description'])?></p>
+                  <p style='margin-bottom: 8px;'>
+                    <strong style='color: var(--brand);'><?=number_format($product['price'], 0, ',', ' ')?> ₽</strong>
+                    <?php if ($product['old_price'] > 0): ?>
+                      <s style='color: #666; margin-left: 8px;'><?=number_format($product['old_price'], 0, ',', ' ')?> ₽</s>
+                    <?php endif; ?>
+                  </p>
+                  <p class='mini muted' style='margin-bottom: 12px;'>
+                    Остаток: <?=$product['stock']?> шт • <?=$product['category']?>
+                  </p>
+
+                  <div style='margin-bottom: 12px;'>
+                    <?php if ($product['enabled']): ?>
+                      <span class='badge badge-success'>Активен</span>
+                    <?php else: ?>
+                      <span class='badge badge-danger'>Выключен</span>
+                    <?php endif; ?>
+
+                    <?php if ($product['featured']): ?>
+                      <span class='badge badge-warning'>⭐ Хит</span>
+                    <?php endif; ?>
+                  </div>
+
+                  <div class='flex'>
+                    <button onclick='editProduct(<?=htmlspecialchars(json_encode($product), ENT_QUOTES)?>)' 
+                            class='btn' style='font-size: 12px; padding: 8px 12px;'>✏️ Изменить</button>
+
+                    <form method='post' style='display: inline;' 
+                          onsubmit='return confirm("Удалить товар «<?=esc($product['name'])?>»?")'>
+                      <input type='hidden' name='id' value='<?=$product['id']?>'>
+                      <button type='submit' name='delete_product' class='btn-danger' style='font-size: 12px; padding: 8px 12px;'>🗑️ Удалить</button>
+                    </form>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+
+      <!-- Основные настройки -->
+      <div id='tab-settings' class='tab-content' style='display:none'>
+        <div class='row'>
+          <div class='card'>
+            <h3>🏪 Основные настройки</h3>
+            <form method='post'>
+              <div class='form-group'>
+                <label>Название бренда</label>
+                <input name='brand' value='<?=esc($cfg['brand'])?>' placeholder='Копировальный фотоцентр ПРИНТСС'>
+              </div>
+              <div class='form-group'>
+                <label>Слоган</label>
+                <input name='slogan' value='<?=esc($cfg['slogan'])?>' placeholder='Печать в Сосновом Бору'>
+              </div>
+              <div class='form-group'>
+                <label>Заголовок героя</label>
+                <input name='hero' value='<?=esc($cfg['hero'])?>' placeholder='Фото на документы — 5 минут'>
+              </div>
+              <div class='form-group'>
+                <label>Описание каталога</label>
+                <textarea name='catalog_desc' rows='2'><?=esc($cfg['catalog_desc'])?></textarea>
+              </div>
+              <div class='form-group'>
+                <label>График работы (каждая строка = отдельный пункт)</label>
+                <textarea name='workhours' rows='3'><?=esc(implode("\n", $cfg['workhours']))?></textarea>
+              </div>
+              <button class='btn' name='admin_save' value='1'>💾 Сохранить</button>
+            </form>
+          </div>
+
+          <div class='card'>
+            <h3>📞 Контакты</h3>
+            <form method='post'>
+              <div class='form-group'>
+                <label>Телефон (отображаемый)</label>
+                <input name='phone_display' value='<?=esc($cfg['phone_display'])?>' placeholder='+7 (952) 200-39-90'>
+              </div>
+              <div class='form-group'>
+                <label>Телефон (для ссылок)</label>
+                <input name='phone_raw' value='<?=esc($cfg['phone_raw'])?>' placeholder='+79522003990'>
+              </div>
+              <div class='form-group'>
+                <label>Email для заказов</label>
+                <input name='email_to' value='<?=esc($cfg['email_to'])?>' placeholder='artcopy78@bk.ru'>
+              </div>
+              <div class='form-group'>
+                <label>Email отправителя</label>
+                <input name='email_from' value='<?=esc($cfg['email_from'])?>' placeholder='noreply@site.ru'>
+              </div>
+              <div class='form-group'>
+                <label>Адрес</label>
+                <input name='address' value='<?=esc($cfg['address'])?>' placeholder='г. Сосновый Бор, ул. Красных Фортов, 49'>
+              </div>
+              <div class='form-group'>
+                <label>Пароль админки</label>
+                <input name='admin_pass' type='password' placeholder='Оставьте пустым, чтобы не менять'>
+                <div class='muted mini'>Текущий: <?=esc($cfg['admin_pass'])?></div>
+              </div>
+              <button class='btn' name='admin_save' value='1'>💾 Сохранить контакты</button>
+            </form>
+          </div>
+        </div>
+
+        <div class='row'>
+          <div class='card'>
+            <h3>📈 SEO настройки</h3>
+            <form method='post'>
+              <div class='form-group'>
+                <label>Title страницы</label>
+                <input name='seo[title]' value='<?=esc($cfg['seo']['title'])?>' placeholder='Копировальный фотоцентр ПРИНТСС'>
+              </div>
+              <div class='form-group'>
+                <label>Описание (Description)</label>
+                <textarea name='seo[description]' rows='2'><?=esc($cfg['seo']['description'])?></textarea>
+              </div>
+              <div class='form-group'>
+                <label>Ключевые слова</label>
+                <input name='seo[keywords]' value='<?=esc($cfg['seo']['keywords'])?>' placeholder='печать, типография, фотоцентр'>
+              </div>
+              <div class='form-group'>
+                <label>OG изображение (URL)</label>
+                <input name='seo[og_image]' value='<?=esc($cfg['seo']['og_image'])?>' placeholder='https://site.ru/image.jpg'>
+              </div>
+              <div class='form-group'>
+                <label><input type='checkbox' name='seo[sitemap_enable]' <?=!empty($cfg['seo']['sitemap_enable'])?'checked':''?>> Включить sitemap.xml</label>
+              </div>
+              <button class='btn' name='admin_save' value='1'>💾 Сохранить SEO</button>
+            </form>
+          </div>
+
+          <div class='card'>
+            <h3>🏢 Реквизиты</h3>
+            <form method='post'>
+              <div class='form-group'>
+                <label>Юридическое название</label>
+                <input name='business[legal_name]' value='<?=esc($cfg['business']['legal_name'])?>' placeholder='ИП Иванов И.И.'>
+              </div>
+              <div class='form-row'>
+                <div class='form-group'>
+                  <label>ИНН</label>
+                  <input name='business[inn]' value='<?=esc($cfg['business']['inn'])?>'>
+                </div>
+                <div class='form-group'>
+                  <label>ОГРН</label>
+                  <input name='business[ogrn]' value='<?=esc($cfg['business']['ogrn'])?>'>
+                </div>
+              </div>
+              <div class='form-group'>
+                <label>Банк</label>
+                <input name='business[bank]' value='<?=esc($cfg['business']['bank'])?>'>
+              </div>
+              <div class='form-row'>
+                <div class='form-group'>
+                  <label>БИК</label>
+                  <input name='business[bik]' value='<?=esc($cfg['business']['bik'])?>'>
+                </div>
+                <div class='form-group'>
+                  <label>Расчётный счёт</label>
+                  <input name='business[account]' value='<?=esc($cfg['business']['account'])?>'>
+                </div>
+              </div>
+              <div class='form-group'>
+                <label><input type='checkbox' name='business[show_requisites]' <?=!empty($cfg['business']['show_requisites'])?'checked':''?>> Показывать реквизиты на сайте</label>
+              </div>
+              <div class='form-group'>
+                <label><input type='checkbox' name='business[show_payment_icons]' <?=!empty($cfg['business']['show_payment_icons'])?'checked':''?>> Показывать иконки оплаты</label>
+              </div>
+              <button class='btn' name='admin_save' value='1'>💾 Сохранить реквизиты</button>
+            </form>
+          </div>
+        </div>
+
+        <div class='card'>
+          <h3>📱 Социальные сети</h3>
+          <form method='post'>
+            <div class='row'>
+              <div class='form-group'>
+                <label>VK (ссылка)</label>
+                <input name='social[vk]' value='<?=esc($cfg['social']['vk'])?>' placeholder='https://vk.com/yourpage'>
+              </div>
+              <div class='form-group'>
+                <label>Instagram (ссылка)</label>
+                <input name='social[instagram]' value='<?=esc($cfg['social']['instagram'])?>' placeholder='https://instagram.com/yourpage'>
+              </div>
+            </div>
+            <div class='row'>
+              <div class='form-group'>
+                <label>WhatsApp (номер)</label>
+                <input name='social[whatsapp]' value='<?=esc($cfg['social']['whatsapp'])?>' placeholder='+79522003990'>
+              </div>
+              <div class='form-group'>
+                <label>Telegram канал</label>
+                <input name='social[telegram_channel]' value='<?=esc($cfg['social']['telegram_channel'])?>' placeholder='@yourchannel'>
+              </div>
+            </div>
+            <button class='btn' name='admin_save' value='1'>💾 Сохранить соцсети</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Интеграции -->
+      <div id='tab-advanced' class='tab-content' style='display:none'>
+        <div class='row'>
+          <div class='card'>
+            <h3>📧 Email настройки</h3>
+            <form method='post'>
+              <div class='form-group'>
+                <label><input type='checkbox' name='smtp_enabled' <?=!empty($cfg['smtp']['enabled'])?'checked':''?>> Использовать SMTP вместо mail()</label>
+              </div>
+              <div class='row'>
+                <div class='form-group'>
+                  <label>SMTP хост</label>
+                  <input name='smtp_host' value='<?=esc($cfg['smtp']['host'])?>' placeholder='smtp.mail.ru'>
+                </div>
+                <div class='form-group'>
+                  <label>SMTP порт</label>
+                  <input name='smtp_port' type='number' value='<?=esc($cfg['smtp']['port'])?>' placeholder='465'>
+                </div>
+              </div>
+              <div class='row'>
+                <div class='form-group'>
+                  <label>Безопасность</label>
+                  <select name='smtp_secure'>
+                    <option value='ssl' <?=($cfg['smtp']['secure']??'ssl')==='ssl'?'selected':''?>>SSL</option>
+                    <option value='tls' <?=($cfg['smtp']['secure']??'ssl')==='tls'?'selected':''?>>TLS</option>
+                    <option value='none' <?=($cfg['smtp']['secure']??'ssl')==='none'?'selected':''?>>Без шифрования</option>
+                  </select>
+                </div>
+                <div></div>
+              </div>
+              <div class='row'>
+                <div class='form-group'>
+                  <label>SMTP логин</label>
+                  <input name='smtp_user' value='<?=esc($cfg['smtp']['user'])?>' placeholder='user@mail.ru'>
+                </div>
+                <div class='form-group'>
+                  <label>SMTP пароль</label>
+                  <input name='smtp_pass' type='password' value='<?=!empty($cfg['smtp']['pass'])?'__KEEP__':''?>' placeholder='password'>
+                  <div class='muted mini'>Оставьте __KEEP__ чтобы не менять</div>
+                </div>
+              </div>
+              <div class='flex'>
+                <button class='btn' name='admin_save' value='1'>💾 Сохранить SMTP</button>
+                <button class='btn2' name='admin_test_email' value='1'>📧 Тест Email</button>
+              </div>
+            </form>
+          </div>
+
+          <div class='card'>
+            <h3>🤖 Telegram настройки</h3>
+            <form method='post'>
+              <div class='form-group'>
+                <label><input type='checkbox' name='tg_enabled' <?=!empty($cfg['telegram']['enabled'])?'checked':''?>> Включить уведомления в Telegram</label>
+              </div>
+              <div class='form-group'>
+                <label>Bot Token</label>
+                <input name='tg_token' value='<?=esc($cfg['telegram']['token'])?>' placeholder='123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'>
+                <div class='muted mini'>Получите у @BotFather</div>
+              </div>
+              <div class='form-group'>
+                <label>Chat ID</label>
+                <input name='tg_chat' value='<?=esc($cfg['telegram']['chat'])?>' placeholder='-100123456789'>
+                <div class='muted mini'>ID чата куда отправлять уведомления</div>
+              </div>
+              <div class='flex'>
+                <button class='btn' name='admin_save' value='1'>💾 Сохранить</button>
+                <button class='btn2' name='admin_test_tg' value='1'>🤖 Тест Telegram</button>
+                <button class='btn2' name='tg_delete_webhook' value='1'>🗑️ Удалить Webhook</button>
+                <button class='btn2' name='tg_get_updates' value='1'>📨 Получить Updates</button>
+              </div>
+            </form>
+
+            <?php if(isset($_SESSION['tg_updates']) && is_array($_SESSION['tg_updates'])): ?>
+            <div style='margin-top:16px'>
+              <div class='muted mini'>Последние сообщения в боте:</div>
+              <?php foreach(array_slice($_SESSION['tg_updates'], -5) as $u): ?>
+              <?php if(isset($u['message'])): $msg=$u['message']; ?>
+              <div style='background:#1e2530;padding:8px;margin:6px 0;border-radius:6px;font-size:12px'>
+                <strong>Chat: <?=esc($msg['chat']['id'])?></strong> | <?=esc($msg['from']['first_name']??'')?> <?=esc($msg['from']['last_name']??'')?><br>
+                <?=esc(mb_substr($msg['text']??'',0,100))?>
+                <form method='post' style='display:inline;margin-left:8px'>
+                  <input type='hidden' name='chat' value='<?=esc($msg['chat']['id'])?>'>
+                  <button class='btn2' name='tg_use_chat' value='1' style='padding:2px 6px;font-size:10px'>Использовать этот чат</button>
+                </form>
+              </div>
+              <?php endif; ?>
+              <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+          </div>
+        </div>
+
+        <div class='card'>
+          <h3>💳 ЮКасса (онлайн платежи)</h3>
+          <form method='post'>
+            <div class='form-group'>
+              <label><input type='checkbox' name='yukassa[enabled]' <?=!empty($cfg['yukassa']['enabled'])?'checked':''?>> Включить онлайн платежи через ЮКассу</label>
+            </div>
+            <div class='row'>
+              <div class='form-group'>
+                <label>Shop ID</label>
+                <input name='yukassa[shop_id]' value='<?=esc($cfg['yukassa']['shop_id'])?>' placeholder='123456'>
+              </div>
+              <div class='form-group'>
+                <label>Secret Key</label>
+                <input name='yukassa[secret_key]' type='password' value='<?=!empty($cfg['yukassa']['secret_key'])?'__KEEP__':''?>' placeholder='live_...'>
+                <div class='muted mini'>Оставьте __KEEP__ чтобы не менять</div>
+              </div>
+            </div>
+            <div class='form-group'>
+              <label>Return URL</label>
+              <input name='yukassa[return_url]' value='<?=esc($cfg['yukassa']['return_url'])?>' placeholder='https://site.ru/payment_result'>
+            </div>
+            <div class='form-group'>
+              <label><input type='checkbox' name='yukassa[test_mode]' <?=!empty($cfg['yukassa']['test_mode'])?'checked':''?>> Тестовый режим (платежи не проводятся)</label>
+            </div>
+            <button class='btn' name='admin_save' value='1'>💾 Сохранить ЮКассу</button>
+            <div class='muted mini' style='margin-top:8px'>
+              Получите данные в личном кабинете ЮКассы. В тестовом режиме платежи проходят условно.
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Дизайн -->
+      <div id='tab-design' class='tab-content' style='display:none'>
+        <div class='row'>
+          <div class='card'>
+            <h3>🎨 Логотип и Hero</h3>
+
+            <div class='row' style='margin-top:12px'>
+              <div>
+                <h4>Логотип</h4>
+                <form method='post' enctype='multipart/form-data' id='logoForm'>
+                  <input type='hidden' name='admin_upload' value='1'>
+                  <input type='hidden' name='what' value='logo'>
+                  <div class='drop <?=!empty($cfg['logo'])?'has-image':''?>' id='logoDrop'>
+                    <input type='file' name='file' accept='image/*' onchange='handleFileUpload(this, "logoDrop", "logoForm")'>
+                    <button type='button' class='drop-remove' onclick='removeImage("logoDrop", "logo")'>✕</button>
+                    <div class='drop-content'>
+                      <?php if(!empty($cfg['logo'])): ?>
+                        <img src='<?=esc($cfg['logo'])?>' class='drop-preview' alt='Логотип'>
+                        <div class='drop-text'>Логотип загружен</div>
+                        <div class='drop-hint'>Нажмите для замены</div>
+                      <?php else: ?>
+                        <div class='drop-icon'>🖼️</div>
+                        <div class='drop-text'>Загрузить логотип</div>
+                        <div class='drop-hint'>PNG, JPG, SVG до 10 МБ</div>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              <div>
+                <h4>Hero изображение</h4>
+                <form method='post' enctype='multipart/form-data' id='heroForm'>
+                  <input type='hidden' name='admin_upload' value='1'>
+                  <input type='hidden' name='what' value='hero'>
+                  <div class='drop <?=($cfg['hero_mode']==='image'&&!empty($cfg['hero_image']))?'has-image':''?>' id='heroDrop'>
+                    <input type='file' name='file' accept='image/*' onchange='handleFileUpload(this, "heroDrop", "heroForm")'>
+                    <button type='button' class='drop-remove' onclick='removeImage("heroDrop", "hero")'>✕</button>
+                    <div class='drop-content'>
+                      <?php if($cfg['hero_mode']==='image'&&!empty($cfg['hero_image'])): ?>
+                        <img src='<?=esc($cfg['hero_image'])?>' class='drop-preview' alt='Hero изображение'>
+                        <div class='drop-text'>Hero загружено</div>
+                        <div class='drop-hint'>Нажмите для замены</div>
+                      <?php else: ?>
+                        <div class='drop-icon'>🎨</div>
+                        <div class='drop-text'>Загрузить hero</div>
+                        <div class='drop-hint'>PNG, JPG до 10 МБ</div>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <div class='card'>
+            <h3>🌈 Цвета и тема</h3>
+            <form method='post'>
+              <div class='row'>
+                <div class='form-group'>
+                  <label>Режим темы</label>
+                  <select name='theme[mode]'>
+                    <option value='light' <?=($cfg['theme']['mode']??'light')==='light'?'selected':''?>>Светлая</option>
+                    <option value='dark' <?=($cfg['theme']['mode']??'light')==='dark'?'selected':''?>>Тёмная</option>
+                  </select>
+                </div>
+                <div></div>
+              </div>
+
+              <div class='row'>
+                <div class='form-group'>
+                  <label>Цвет фона</label>
+                  <input name='theme[bg]' type='color' value='<?=esc($cfg['theme']['bg'])?>'>
+                </div>
+                <div class='form-group'>
+                  <label>Цвет текста</label>
+                  <input name='theme[text]' type='color' value='<?=esc($cfg['theme']['text'])?>'>
+                </div>
+              </div>
+
+              <div class='row'>
+                <div class='form-group'>
+                  <label>Цвет бренда</label>
+                  <input name='theme[brand]' type='color' value='<?=esc($cfg['theme']['brand'])?>'>
+                </div>
+                <div class='form-group'>
+                  <label>Акцентный цвет</label>
+                  <input name='theme[accent]' type='color' value='<?=esc($cfg['theme']['accent'])?>'>
+                </div>
+              </div>
+
+              <div class='row'>
+                <div class='form-group'>
+                  <label>Цвет неактивного текста</label>
+                  <input name='theme[muted]' type='color' value='<?=esc($cfg['theme']['muted'])?>'>
+                </div>
+                <div class='form-group'>
+                  <label>Максимальная ширина (px)</label>
+                  <input name='theme[container]' type='number' min='900' max='1400' value='<?=esc($cfg['theme']['container'])?>'>
+                </div>
+              </div>
+
+              <div class='row'>
+                <div class='form-group'>
+                  <label>Прозрачность карт (0.3-1.0)</label>
+                  <input name='theme[card_opacity]' type='range' min='0.3' max='1' step='0.05' value='<?=esc($cfg['theme']['card_opacity'])?>'>
+                  <span id='opacityValue'><?=esc($cfg['theme']['card_opacity'])?></span>
+                </div>
+                <div class='form-group'>
+                  <label>Размытие (px)</label>
+                  <input name='theme[blur]' type='range' min='0' max='30' value='<?=esc($cfg['theme']['blur'])?>'>
+                  <span id='blurValue'><?=esc($cfg['theme']['blur'])?></span>
+                </div>
+              </div>
+
+              <div class='row'>
+                <div class='form-group'>
+                  <label>Скругление углов (px)</label>
+                  <input name='theme[radius]' type='range' min='0' max='28' value='<?=esc($cfg['theme']['radius'])?>'>
+                  <span id='radiusValue'><?=esc($cfg['theme']['radius'])?></span>
+                </div>
+                <div class='form-group'>
+                  <label>Интенсивность теней (0-0.5)</label>
+                  <input name='theme[shadow]' type='range' min='0' max='0.5' step='0.02' value='<?=esc($cfg['theme']['shadow'])?>'>
+                  <span id='shadowValue'><?=esc($cfg['theme']['shadow'])?></span>
+                </div>
+              </div>
+
+              <button class='btn' name='admin_save' value='1'>🎨 Применить тему</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+    <?php endif; ?>
+  </div>
+
+  <script>
+    // Переключение вкладок
+    function showTab(tabName, element) {
+      document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+      });
+      document.querySelectorAll('.tab').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.getElementById('tab-' + tabName).style.display = 'block';
+      element.classList.add('active');
+    }
+
+    // Работа с товарами
+    function editProduct(product) {
+      document.getElementById('editId').value = product.id;
+      document.getElementById('editName').value = product.name;
+      document.getElementById('editCategory').value = product.category;
+      document.getElementById('editPrice').value = product.price;
+      document.getElementById('editOldPrice').value = product.old_price || '';
+      document.getElementById('editStock').value = product.stock;
+      document.getElementById('editDescription').value = product.description;
+      document.getElementById('editEnabled').checked = product.enabled;
+      document.getElementById('editFeatured').checked = product.featured;
+
+      showTab('products', document.querySelector('[onclick*="products"]'));
+      document.querySelector('#tab-products .card').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function clearProductForm() {
+      document.getElementById('editId').value = '';
+      document.getElementById('editName').value = '';
+      document.getElementById('editPrice').value = '';
+      document.getElementById('editOldPrice').value = '';
+      document.getElementById('editStock').value = '10';
+      document.getElementById('editDescription').value = '';
+      document.getElementById('editEnabled').checked = true;
+      document.getElementById('editFeatured').checked = false;
+    }
+
+    // Умные загрузчики изображений
+    function handleFileUpload(input, dropId, formId) {
+      if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const drop = document.getElementById(dropId);
+        const form = document.getElementById(formId);
+
+        if (file.size > 10 * 1024 * 1024) {
+          alert('Файл слишком большой! Максимум 10 МБ.');
+          input.value = '';
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const content = drop.querySelector('.drop-content');
+          content.innerHTML = `
+            <img src="${e.target.result}" class="drop-preview" alt="Превью">
+            <div class="drop-text">Файл готов к загрузке</div>
+            <div class="drop-hint">Нажмите для замены</div>
+          `;
+          drop.classList.add('has-image');
+        };
+        reader.readAsDataURL(file);
+
+        setTimeout(() => {
+          form.submit();
+        }, 500);
+      }
+    }
+
+    function removeImage(dropId, type) {
+      if (confirm('Удалить изображение?')) {
+        const drop = document.getElementById(dropId);
+
+        if (type === 'logo') {
+          drop.querySelector('.drop-content').innerHTML = `
+            <div class="drop-icon">🖼️</div>
+            <div class="drop-text">Загрузить логотип</div>
+            <div class="drop-hint">PNG, JPG, SVG до 10 МБ</div>
+          `;
+        } else {
+          drop.querySelector('.drop-content').innerHTML = `
+            <div class="drop-icon">🎨</div>
+            <div class="drop-text">Загрузить hero</div>
+            <div class="drop-hint">PNG, JPG до 10 МБ</div>
+          `;
+        }
+
+        drop.classList.remove('has-image');
+
+        const form = new FormData();
+        form.append('admin_save', '1');
+        form.append(type === 'logo' ? 'logo' : 'hero_image', '');
+        form.append(type === 'logo' ? 'logo' : 'hero_mode', type === 'logo' ? '' : 'svg');
+
+        fetch(location.href, {
+          method: 'POST',
+          body: form
+        }).then(() => {
+          location.reload();
+        });
+      }
+    }
+
+    // Drag & Drop
+    document.querySelectorAll('.drop').forEach(drop => {
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        drop.addEventListener(eventName, preventDefaults, false);
+      });
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        drop.addEventListener(eventName, () => drop.classList.add('hover'), false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        drop.addEventListener(eventName, () => drop.classList.remove('hover'), false);
+      });
+
+      drop.addEventListener('drop', handleDrop, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      const input = e.target.querySelector('input[type="file"]');
+
+      if (files.length > 0) {
+        input.files = files;
+        const changeEvent = new Event('change', { bubbles: true });
+        input.dispatchEvent(changeEvent);
+      }
+    }
+
+    // Отображение значений ползунков
+    document.querySelectorAll('input[type="range"]').forEach(slider => {
+      slider.addEventListener('input', function() {
+        const name = this.name.split('[')[1].split(']')[0];
+        const valueSpan = document.getElementById(name + 'Value');
+        if (valueSpan) valueSpan.textContent = this.value;
+      });
+    });
+  </script>
+</body>
+</html>
