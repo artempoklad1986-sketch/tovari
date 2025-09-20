@@ -1,0 +1,1754 @@
+<?php
+mb_internal_encoding('UTF-8');
+date_default_timezone_set('Europe/Moscow');
+session_start();
+
+/* Paths */
+$BASE = __DIR__;
+$uploadsDir = $BASE.'/uploads';
+$ordersLog  = $BASE.'/orders.txt';
+$configFile = $BASE.'/config.json';
+$chatLog = $BASE.'/chat_log.txt';
+$aiKnowledgeFile = $BASE.'/ai_knowledge.json';
+
+/* FS init */
+if (!is_dir($uploadsDir)) @mkdir($uploadsDir, 0775, true);
+if (!file_exists($uploadsDir.'/.htaccess')) {
+  @file_put_contents($uploadsDir.'/.htaccess', 'php_flag engine off\nOptions -ExecCGI\n<FilesMatch \'\\.(php|phar|phtml|cgi|pl|py)$\'>\nDeny from all\n</FilesMatch>\n');
+}
+if (!file_exists($ordersLog)) @file_put_contents($ordersLog, '');
+if (!file_exists($chatLog)) @file_put_contents($chatLog, '');
+
+/* AI Knowledge Base */
+$defaultKnowledge = [
+  'greetings' => [
+    'Здравствуйте! Я дедушка Артемий, ваш помощник в мире печати! 👋',
+    'Приветствую! Меня зовут Артемий, я помогу вам с любыми вопросами по печати! 📝',
+    'Добро пожаловать! Я Артемий, мастер печатных дел с 40-летним стажем! 🎯'
+  ],
+  'services' => [
+    'фото документы' => 'Фото на документы делаем за 5 минут! Электронную версию даем бесплатно. Цена всего 400 рублей.',
+    'визитки' => 'Визитки печатаем на мелованной бумаге 300 г/м². Готовы за 1 день. От 900 рублей за 100 штук.',
+    'баннеры' => 'Баннеры из ПВХ 440 г/м² с люверсами. Срочное изготовление 2-4 часа. От 1100 рублей.',
+    'листовки' => 'Листовки А6/А5/А4, одно- и двусторонние. Тираж от 100 штук. Срок 1-2 дня.',
+    'штампы' => 'Штампы и печати изготавливаем в день заказа! От 1800 рублей с автоматической оснасткой.'
+  ],
+  'prices' => [
+    'фото документы' => '400 рублей за фото на документы',
+    'распечатка' => 'от 20 рублей за лист',
+    'визитки' => 'от 900 рублей за 100 штук',
+    'баннеры' => 'от 1100 рублей',
+    'фотопечать' => 'от 30 рублей за фото'
+  ],
+  'help' => [
+    'Могу помочь выбрать услугу, рассчитать стоимость, оформить заказ или рассказать о наших возможностях!',
+    'Спрашивайте обо всем! Знаю все тонкости печатного дела и с радостью поделюсь опытом!',
+    'Подскажу лучший материал, посчитаю цену и помогу с оформлением заказа!'
+  ]
+];
+
+if (!file_exists($aiKnowledgeFile)) @file_put_contents($aiKnowledgeFile, json_encode($defaultKnowledge, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+
+/* Config */
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+$siteURL = $scheme.$host;
+
+$defaultConfig = [
+  'brand'         => 'Копировальный фотоцентр ПРИНТСС',
+  'slogan'        => 'Печать в Сосновом Бору — ул. Красных Фортов, 49 (рядом с OZON и Саша Суши)',
+  'hero'          => 'Фото на документы — 5 минут (электронный вид бесплатно)',
+  'phone_display' => '+7 (952) 200-39-90',
+  'phone_raw'     => '+79522003990',
+  'email_to'      => 'artcopy78@bk.ru',
+  'email_from'    => 'noreply@'.preg_replace('~^www\.~','',$host),
+  'email_cc'      => '',
+  'email_bcc'     => '',
+  'email_reply'   => '',
+  'address'       => 'Россия, Ленинградская обл., Сосновый Бор, ул. Красных Фортов, 49',
+  'workhours'     => ['Пн–Пт 10:00–20:00', 'Сб–Вс 11:00–18:00'],
+  'site'          => $siteURL,
+  'logo'          => '',
+  'hero_mode'     => 'svg',
+  'hero_image'    => '',
+  'catalog_desc'  => 'Каталог услуг нашей типографии и фотоцентра. Быстро, рядом, по-честным ценам. Нажмите «Заказать» или воспользуйтесь онлайн-калькулятором.',
+  'seo' => [
+    'title'       => 'Копировальный фотоцентр ПРИНТСС — типография | Фото 5 минут',
+    'description' => 'Типография и фотоцентр: визитки, баннеры, листовки, фото на документы 5 минут. Красных Фортов, 49. Тел. +7 (952) 200-39-90',
+    'keywords'    => 'печать, типография, фотоцентр, визитки, баннеры, фото на документы, Сосновый Бор',
+    'og_image'    => '',
+    'sitemap_enable' => true,
+  ],
+  'business' => [
+    'show_requisites' => true,
+    'show_payment_icons' => true,
+    'legal_name' => 'ИП Гурбанова Галина Александровна',
+    'inn' => '',
+    'ogrn' => '',
+    'bank' => '',
+    'bik' => '',
+    'account' => '',
+  ],
+  'yukassa' => [
+    'enabled'  => false,
+    'shop_id'  => '',
+    'secret_key' => '',
+    'test_mode' => true,
+    'return_url' => $siteURL . '/payment_result',
+  ],
+  'theme' => [
+    'mode'         => 'light',
+    'bg'           => '#f3f7ff',
+    'text'         => '#0e1220',
+    'muted'        => '#5c6b84',
+    'brand'        => '#FF8A00',
+    'accent'       => '#2D5BFF',
+    'card_opacity' => 0.65,
+    'blur'         => 12,
+    'radius'       => 16,
+    'shadow'       => 0.12,
+    'container'    => 1200
+  ],
+  'telegram'      => [
+    'enabled' => true,
+    'token'   => '8385005974:AAHhQkvdKP5LJSbSI-pge_TGefgcYDLTBZw',
+    'chat'    => ''
+  ],
+  'smtp' => [
+    'enabled' => false,
+    'host'    => 'smtp.mail.ru',
+    'port'    => 465,
+    'secure'  => 'ssl',
+    'user'    => 'artcopy78@bk.ru',
+    'pass'    => ''
+  ],
+  'admin_pass' => 'printss49',
+  'features' => [
+    'reviews_enabled' => true,
+    'callback_widget' => true,
+    'price_alerts' => true,
+    'loyalty_program' => false,
+  ],
+  'social' => [
+    'vk' => '',
+    'instagram' => '',
+    'youtube' => '',
+    'whatsapp' => '+79522003990',
+    'telegram_channel' => '',
+  ]
+];
+
+if (!file_exists($configFile)) @file_put_contents($configFile, json_encode($defaultConfig, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+$cfg = json_decode(@file_get_contents($configFile), true);
+if (!is_array($cfg)) $cfg = $defaultConfig;
+$cfg = array_replace_recursive($defaultConfig, $cfg);
+
+/* Helpers */
+function esc($s){ return htmlspecialchars((string)$s, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
+function sanitize_text($s){ return trim(filter_var($s, FILTER_SANITIZE_FULL_SPECIAL_CHARS)); }
+function sanitize_hex($s){ $s=trim((string)$s); if($s==='') return ''; if($s[0]!=='#') $s='#'.$s; if(!preg_match('~^#[0-9a-fA-F]{3,8}$~',$s)) return '#000000'; return $s; }
+function clamp_float($v,$min,$max,$def){ $v=(float)$v; if(!is_finite($v)) return $def; return max($min, min($max, $v)); }
+function clamp_int($v,$min,$max,$def){ $v=(int)$v; if(!is_finite($v)) return $def; return max($min, min($max, $v)); }
+function log_order($path, $data){
+  @file_put_contents($path, '['.date('Y-m-d H:i:s').'] '.json_encode($data, JSON_UNESCAPED_UNICODE).PHP_EOL, FILE_APPEND);
+}
+function log_chat($path, $data){
+  @file_put_contents($path, '['.date('Y-m-d H:i:s').'] '.json_encode($data, JSON_UNESCAPED_UNICODE).PHP_EOL, FILE_APPEND);
+}
+function save_upload_general($field, $uploadsDir, $allowExt){
+  if (!isset($_FILES[$field]) || !is_uploaded_file($_FILES[$field]['tmp_name'])) return null;
+  $name = preg_replace('~[^a-zA-Z0-9_\.-]+~u','-', $_FILES[$field]['name']);
+  $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+  if (!in_array($ext, $allowExt)) throw new Exception('Недопустимый формат: '.esc($ext));
+  if ($_FILES[$field]['size'] > 100*1024*1024) throw new Exception('Файл слишком большой (макс. 100 МБ).');
+  $newName = date('Ymd-His').'-'.bin2hex(random_bytes(3)).'-'.$name;
+  $dest = $uploadsDir.'/'.$newName;
+  if (!move_uploaded_file($_FILES[$field]['tmp_name'], $dest)) throw new Exception('Не удалось сохранить файл.');
+  return $newName;
+}
+function save_upload_order($field, $uploadsDir){
+  $allowed = ['jpg','jpeg','png','pdf','svg','tif','tiff','ai','psd','cdr','eps','zip','rar','doc','docx','xls','xlsx','ppt','pptx'];
+  return save_upload_general($field, $uploadsDir, $allowed);
+}
+function save_upload_image($field, $uploadsDir){
+  $allowed = ['jpg','jpeg','png','webp','svg'];
+  return save_upload_general($field, $uploadsDir, $allowed);
+}
+
+/* Email helpers */
+function parse_emails($s){
+  $s = str_replace([';','\n','\r'],',',$s);
+  $parts = array_filter(array_map('trim', explode(',', (string)$s)));
+  $out = [];
+  foreach($parts as $p){
+    if (filter_var($p, FILTER_VALIDATE_EMAIL)) $out[] = $p;
+  }
+  return array_values(array_unique($out));
+}
+
+function email_headers($fromName, $from, $reply=null, $cc=null, $bcc=null){
+  $h  = "MIME-Version: 1.0\r\n";
+  $h .= "Content-Type: text/plain; charset=UTF-8\r\n";
+  $h .= "From: $fromName <$from>\r\n";
+  if ($reply) $h .= "Reply-To: $reply\r\n";
+  if ($cc){
+    $ccs = is_array($cc) ? implode(', ',$cc) : $cc;
+    if($ccs) $h .= "Cc: $ccs\r\n";
+  }
+  if ($bcc){
+    $bccs = is_array($bcc) ? implode(', ',$bcc) : $bcc;
+    if($bccs) $h .= "Bcc: $bccs\r\n";
+  }
+  $h .= "X-Priority: 1\r\nX-Mailer: SmartPrint\r\n";
+  return $h;
+}
+
+function email_send_mail($to,$subj,$body,$fromName,$from,$reply=null,$cc=null,$bcc=null){
+  $h = email_headers($fromName,$from,$reply,$cc,$bcc);
+  $toStr = is_array($to) ? implode(', ',$to) : $to;
+  return @mail($toStr, '=?UTF-8?B?'.base64_encode($subj).'?=', $body, $h);
+}
+
+function smtp_cmd($fp,$cmd,$expect=null){
+  if ($cmd !== null) fwrite($fp, $cmd."\r\n");
+  $resp=''; while($line=fgets($fp, 515)){ $resp.=$line; if(isset($line[3])&&$line[3]===' ') break; }
+  if ($expect && strpos($resp,(string)$expect)!==0) throw new Exception("SMTP error: expected $expect, got: ".$resp);
+  return $resp;
+}
+
+function email_send_smtp($to,$subj,$body,$fromName,$from,$smtp,$reply=null,$cc=null,$bcc=null){
+  $host=$smtp['host']; $port=(int)$smtp['port']; $secure=strtolower($smtp['secure']??'ssl');
+  $ctx=stream_context_create(['ssl'=>['verify_peer'=>false,'verify_peer_name'=>false]]);
+  $endpoint=(($secure==='ssl')?'ssl://':'tcp://').$host.':'.$port;
+  $fp=@stream_socket_client($endpoint,$errno,$errstr,15,STREAM_CLIENT_CONNECT,$ctx);
+  if(!$fp) throw new Exception("SMTP connect failed: $errstr");
+  stream_set_timeout($fp,15);
+  smtp_cmd($fp,null,220);
+  smtp_cmd($fp,'EHLO localhost',250);
+  if($secure==='tls'){ smtp_cmd($fp,'STARTTLS',220); if(!stream_socket_enable_crypto($fp,true,STREAM_CRYPTO_METHOD_TLS_CLIENT)) throw new Exception('STARTTLS failed'); smtp_cmd($fp,'EHLO localhost',250); }
+  if (!empty($smtp['user'])){ smtp_cmd($fp,'AUTH LOGIN',334); smtp_cmd($fp,base64_encode($smtp['user']),334); smtp_cmd($fp,base64_encode($smtp['pass']),235); }
+  smtp_cmd($fp,"MAIL FROM:<$from>",250);
+  $rcpts = [];
+  foreach ((array)$to as $rcpt) $rcpts[]=$rcpt;
+  foreach ((array)$cc as $rcpt) $rcpts[]=$rcpt;
+  foreach ((array)$bcc as $rcpt) $rcpts[]=$rcpt;
+  $rcpts = array_values(array_unique(array_filter($rcpts)));
+  foreach ($rcpts as $rcpt) smtp_cmd($fp,"RCPT TO:<$rcpt>",250);
+  smtp_cmd($fp,'DATA',354);
+  $data  = email_headers($fromName,$from,$reply,$cc,$bcc);
+  $allToHeader = array_values(array_unique(array_merge((array)$to,(array)$cc)));
+  $data .= 'To: <'.(implode(', ',$allToHeader)).">\r\n";
+  $data .= 'Subject: =?UTF-8?B?'.base64_encode($subj)."?=\r\n\r\n".$body."\r\n.\r\n";
+  fwrite($fp,$data);
+  $r=fgets($fp,515); if (strpos($r,'250')!==0) throw new Exception('SMTP DATA not accepted: '.$r);
+  smtp_cmd($fp,'QUIT',221); fclose($fp); return true;
+}
+
+function send_email_all($cfg,$subject,$body){
+  $to = parse_emails($cfg['email_to']);
+  if (empty($to)) $to = [$cfg['email_to']];
+  $cc = parse_emails($cfg['email_cc'] ?? '');
+  $bcc= parse_emails($cfg['email_bcc'] ?? '');
+  $reply = trim($cfg['email_reply'] ?? '') ?: null;
+  $from = $cfg['email_from'];
+  $ok=false; $errs=[];
+  if (!empty($cfg['smtp']['enabled'])){
+    try{ email_send_smtp($to,$subject,$body,'SmartPrint',$from,$cfg['smtp'],$reply,$cc,$bcc); $ok=true; }
+    catch(Throwable $e){ $errs[]='SMTP: '.$e->getMessage(); }
+  }
+  if(!$ok){ $ok=email_send_mail($to,$subject,$body,'SmartPrint',$from,$reply,$cc,$bcc); if(!$ok) $errs[]='mail(): fail'; }
+  return [$ok,$errs];
+}
+
+/* Telegram API */
+function tg_api($token,$method,$params=[],$multipart=false){
+  $url="https://api.telegram.org/bot$token/$method";
+  $ch=curl_init($url);
+  curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
+  curl_setopt($ch,CURLOPT_CONNECTTIMEOUT,10);
+  curl_setopt($ch,CURLOPT_TIMEOUT,20);
+  if($multipart){ curl_setopt($ch,CURLOPT_POSTFIELDS,$params); }
+  else{ curl_setopt($ch,CURLOPT_POSTFIELDS,http_build_query($params)); }
+  $resp=curl_exec($ch); $err=curl_error($ch); curl_close($ch);
+  if($err) throw new Exception('Telegram CURL: '.$err);
+  $j=json_decode($resp,true);
+  if(!$j || empty($j['ok'])) throw new Exception('Telegram API: '.$resp);
+  return $j['result'] ?? true;
+}
+
+function tg_send_message_cfg($cfg,$text){
+  if(empty($cfg['telegram']['enabled'])) return [false,'disabled'];
+  $token=$cfg['telegram']['token']??''; $chat=$cfg['telegram']['chat']??'';
+  if(!$token || !$chat) return [false,'no token/chat'];
+  try{ tg_api($token,'sendMessage',['chat_id'=>$chat,'text'=>$text,'parse_mode'=>'HTML','disable_web_page_preview'=>true]); return [true,null]; }
+  catch(Throwable $e){ return [false,$e->getMessage()]; }
+}
+
+function tg_send_file_cfg($cfg,$file,$caption=''){
+  if(empty($cfg['telegram']['enabled'])) return [false,'disabled'];
+  $token=$cfg['telegram']['token']??''; $chat=$cfg['telegram']['chat']??'';
+  if(!$token || !$chat) return [false,'no token/chat'];
+  if(!is_file($file)) return [false,'file not found'];
+  try{
+    tg_api($token,'sendDocument',[
+      'chat_id'=>$chat,
+      'caption'=>$caption,
+      'document'=>new CURLFile($file, mime_content_type($file)?:'application/octet-stream', basename($file))
+    ], true);
+    return [true,null];
+  }catch(Throwable $e){ return [false,$e->getMessage()]; }
+}
+
+/* ЮКасса Integration */
+function yukassa_create_payment($cfg, $amount, $description, $order_id){
+  if(empty($cfg['yukassa']['enabled'])) return [false, 'Payments disabled'];
+
+  $shop_id = $cfg['yukassa']['shop_id'];
+  $secret_key = $cfg['yukassa']['secret_key'];
+  $return_url = $cfg['yukassa']['return_url'];
+
+  if(!$shop_id || !$secret_key) return [false, 'Missing shop_id or secret_key'];
+
+  $url = 'https://api.yookassa.ru/v3/payments';
+
+  $data = [
+    'amount' => ['value' => number_format($amount, 2, '.', ''), 'currency' => 'RUB'],
+    'confirmation' => ['type' => 'redirect', 'return_url' => $return_url],
+    'description' => $description,
+    'metadata' => ['order_id' => $order_id]
+  ];
+
+  $ch = curl_init($url);
+  curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+  curl_setopt($ch, CURLOPT_POST, true);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+  curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json',
+    'Idempotence-Key: ' . uniqid(),
+    'Authorization: Basic ' . base64_encode($shop_id . ':' . $secret_key)
+  ]);
+
+  $result = curl_exec($ch);
+  $error = curl_error($ch);
+  curl_close($ch);
+
+  if($error) return [false, 'CURL error: ' . $error];
+
+  $response = json_decode($result, true);
+  if(!$response || !isset($response['confirmation']['confirmation_url'])) {
+    return [false, 'Invalid response: ' . $result];
+  }
+
+  return [true, $response];
+}
+
+/* Sitemap generation */
+function generate_sitemap($cfg) {
+  $sitemap = '<?xml version="1.0" encoding="UTF-8"?' . '>' . "\n";
+  $sitemap .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+
+  $sitemap .= '<url><loc>' . esc($cfg['site']) . '</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>' . "\n";
+
+  $sections = ['catalog', 'calc', 'services', 'how', 'contacts'];
+  foreach($sections as $section) {
+    $sitemap .= '<url><loc>' . esc($cfg['site']) . '/#' . $section . '</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>' . "\n";
+  }
+
+  $sitemap .= '</urlset>';
+  return $sitemap;
+}
+
+/* API routes */
+function require_admin($cfg){
+  if(empty($_SESSION['is_admin'])){ header('Location: ?admin=1&login=1'); exit; }
+}
+
+// Sitemap route
+if (isset($_GET['sitemap'])) {
+  header('Content-Type: application/xml; charset=utf-8');
+  echo generate_sitemap($cfg);
+  exit;
+}
+
+// Обратный звонок
+if (($_POST['mode']??'')==='callback') {
+  header('Content-Type: application/json; charset=utf-8');
+  try{
+    $name = sanitize_text($_POST['name']??'');
+    $phone = sanitize_text($_POST['phone']??'');
+    $time = sanitize_text($_POST['time']??'');
+
+    if($name==='' || $phone==='') throw new Exception('Укажите имя и телефон.');
+
+    $callback = [
+      'ts'=>date('Y-m-d H:i:s'),
+      'name'=>$name,
+      'phone'=>$phone,
+      'preferred_time'=>$time,
+      'ip'=>$_SERVER['REMOTE_ADDR']??'',
+      'type'=>'callback'
+    ];
+    log_order($ordersLog, $callback);
+
+    $body = "Заявка на обратный звонок с сайта {$cfg['brand']}\n\n"
+          . "Имя: $name\nТелефон: $phone\n"
+          . ($time ? "Удобное время: $time\n" : '')
+          . "IP: {$callback['ip']}\n";
+
+    [$mailOk,$mailErrs] = send_email_all($cfg, 'Обратный звонок — ' . $name, $body);
+
+    $tgMsg = '📞 <b>Обратный звонок</b>\n👤 '.esc($name).'\n📱 '.esc($phone).'\n'
+           . ($time ? '🕐 '.esc($time).'\n' : '')
+           . "🌐 $siteURL";
+    [$tgOk,$tgErr] = tg_send_message_cfg($cfg, $tgMsg);
+
+    echo json_encode([
+      'ok'=>true,
+      'message'=>'Заявка принята. Перезвоним в течение 15 минут!',
+      'emailOk'=>$mailOk,
+      'tgOk'=>$tgOk
+    ]);
+    exit;
+  }catch(Exception $e){
+    echo json_encode(['ok'=>false,'message'=>$e->getMessage()]);
+    exit;
+  }
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST'){
+  /* Order */
+  if (($_POST['mode']??'')==='order'){
+    header('Content-Type: application/json; charset=utf-8');
+    try{
+      $name = sanitize_text($_POST['name']??'');
+      $phone= sanitize_text($_POST['phone']??'');
+      $service=sanitize_text($_POST['service']??'');
+      $price= sanitize_text($_POST['price']??'');
+      $comment=sanitize_text($_POST['comment']??'');
+      $calc = sanitize_text($_POST['calc']??'');
+      $payment_method = sanitize_text($_POST['payment_method']??'');
+
+      if($name===''||$phone===''||$service==='') throw new Exception('Укажите имя, телефон и услугу.');
+      $saved=null; if(!empty($_FILES['file']['name'])) $saved=save_upload_order('file',$uploadsDir);
+
+      $order = [
+        'ts'=>date('Y-m-d H:i:s'),'name'=>$name,'phone'=>$phone,'service'=>$service,'price'=>$price,'comment'=>$comment,'calc'=>$calc,
+        'file'=>$saved?('uploads/'.$saved):null,'ip'=>$_SERVER['REMOTE_ADDR']??'','ua'=>$_SERVER['HTTP_USER_AGENT']??'',
+        'payment_method'=>$payment_method
+      ];
+      log_order($ordersLog,$order);
+
+      $body = "Новая заявка с сайта {$cfg['brand']}\n\n"
+            . "Имя: $name\nТелефон: $phone\nУслуга: $service\n"
+            . ($price?"Ориент. цена: $price\n":'')
+            . ($calc?"Калькулятор: $calc\n":'')
+            . ($comment?"Комментарий: $comment\n":'')
+            . ($payment_method?"Способ оплаты: $payment_method\n":'')
+            . ($saved?"Файл: $siteURL/uploads/$saved\n":'')
+            . "IP: {$order['ip']}\n";
+      [$mailOk,$mailErrs]=send_email_all($cfg,'Заявка — '.$service,$body);
+
+      $tgMsg = '🆕 <b>'.esc($service).'</b>\n👤 '.esc($name).'\n📞 '.esc($phone).'\n'
+             . ($price?'💰 '.esc($price).'\n':'')
+             . ($calc?'📐 '.esc($calc).'\n':'')
+             . ($comment?'💬 '.esc($comment).'\n':'')
+             . ($payment_method?'💳 Оплата: '.esc($payment_method).'\n':'')
+             . ($saved?"📎 Файл: $siteURL/uploads/$saved\n":'')
+             . "🌐 $siteURL";
+      [$tgOk,$tgErr]=tg_send_message_cfg($cfg,$tgMsg);
+      if($saved) @tg_send_file_cfg($cfg, $BASE.'/uploads/'.basename($saved), 'Макет к заявке');
+
+      $response = ['ok'=>true,'emailOk'=>$mailOk,'tgOk'=>$tgOk];
+
+      if($payment_method === 'online' && $price && preg_match('/(\d+)/', $price, $matches)) {
+        $amount = (float)$matches[1];
+        if($amount > 0) {
+          [$payOk, $payResult] = yukassa_create_payment($cfg, $amount, $service, time());
+          if($payOk) {
+            $response['payment'] = true;
+            $response['payment_url'] = $payResult['confirmation']['confirmation_url'];
+            $response['message'] = 'Заявка отправлена. Для оплаты перейдите по ссылке.';
+          } else {
+            $response['message'] = 'Заявка отправлена. Ошибка создания платежа: ' . $payResult;
+          }
+        }
+      } else {
+        $response['message'] = 'Заявка отправлена. Мы свяжемся с вами.';
+        if(!$mailOk) $response['message'] .= ' (email недоступен — продублировали в Telegram/журнал)';
+      }
+
+      echo json_encode($response); exit;
+    }catch(Exception $e){
+      echo json_encode(['ok'=>false,'message'=>$e->getMessage()]); exit;
+    }
+  }
+
+  if (isset($_POST['admin_login'])){
+    $pass=$_POST['password']??''; if(hash_equals($cfg['admin_pass'],$pass)){ $_SESSION['is_admin']=true; header('Location: ?admin=1'); }
+    else { header('Location: ?admin=1&login=1&err=1'); }
+    exit;
+  }
+
+  if (isset($_POST['admin_save'])){
+    require_admin($cfg);
+    $new=$cfg;
+    foreach(['brand','slogan','hero','phone_display','phone_raw','email_to','email_from','email_cc','email_bcc','email_reply','address','hero_mode','hero_image','catalog_desc'] as $f){
+      if(isset($_POST[$f])) $new[$f]=trim($_POST[$f]);
+    }
+    if(isset($_POST['workhours'])){
+      $wh=array_filter(array_map('trim', explode("\n", str_replace("\r",'',$_POST['workhours']))));
+      if($wh) $new['workhours']=array_values($wh);
+    }
+    if(!empty($_POST['admin_pass'])) $new['admin_pass']=$_POST['admin_pass'];
+
+    if(isset($_POST['seo']) && is_array($_POST['seo'])){
+      $new['seo']['title'] = trim($_POST['seo']['title'] ?? $new['seo']['title']);
+      $new['seo']['description'] = trim($_POST['seo']['description'] ?? $new['seo']['description']);
+      $new['seo']['keywords'] = trim($_POST['seo']['keywords'] ?? $new['seo']['keywords']);
+      $new['seo']['og_image'] = trim($_POST['seo']['og_image'] ?? $new['seo']['og_image']);
+      $new['seo']['sitemap_enable'] = !empty($_POST['seo']['sitemap_enable']);
+    }
+
+    if(isset($_POST['business']) && is_array($_POST['business'])){
+      $new['business']['show_requisites'] = !empty($_POST['business']['show_requisites']);
+      $new['business']['show_payment_icons'] = !empty($_POST['business']['show_payment_icons']);
+      $new['business']['legal_name'] = trim($_POST['business']['legal_name'] ?? $new['business']['legal_name']);
+      $new['business']['inn'] = trim($_POST['business']['inn'] ?? $new['business']['inn']);
+      $new['business']['ogrn'] = trim($_POST['business']['ogrn'] ?? $new['business']['ogrn']);
+      $new['business']['bank'] = trim($_POST['business']['bank'] ?? $new['business']['bank']);
+      $new['business']['bik'] = trim($_POST['business']['bik'] ?? $new['business']['bik']);
+      $new['business']['account'] = trim($_POST['business']['account'] ?? $new['business']['account']);
+    }
+
+    if(isset($_POST['social']) && is_array($_POST['social'])){
+      foreach(['vk','instagram','youtube','whatsapp','telegram_channel'] as $s) {
+        $new['social'][$s] = trim($_POST['social'][$s] ?? $new['social'][$s]);
+      }
+    }
+
+    if(isset($_POST['yukassa']) && is_array($_POST['yukassa'])){
+      $new['yukassa']['enabled'] = !empty($_POST['yukassa']['enabled']);
+      $new['yukassa']['shop_id'] = trim($_POST['yukassa']['shop_id'] ?? $new['yukassa']['shop_id']);
+      $new['yukassa']['test_mode'] = !empty($_POST['yukassa']['test_mode']);
+      $new['yukassa']['return_url'] = trim($_POST['yukassa']['return_url'] ?? $new['yukassa']['return_url']);
+      if(isset($_POST['yukassa']['secret_key']) && $_POST['yukassa']['secret_key'] !== '__KEEP__') {
+        $new['yukassa']['secret_key'] = $_POST['yukassa']['secret_key'];
+      }
+    }
+
+    $new['smtp']['enabled']=!empty($_POST['smtp_enabled']);
+    $new['smtp']['host']=trim($_POST['smtp_host']??$new['smtp']['host']);
+    $new['smtp']['port']=(int)($_POST['smtp_port']??$new['smtp']['port']);
+    $new['smtp']['secure']=in_array($_POST['smtp_secure']??'ssl',['ssl','tls','none'])?$_POST['smtp_secure']:'ssl';
+    $new['smtp']['user']=trim($_POST['smtp_user']??$new['smtp']['user']);
+    if(isset($_POST['smtp_pass']) && $_POST['smtp_pass']!=='__KEEP__') $new['smtp']['pass']=$_POST['smtp_pass'];
+
+    $new['telegram']['enabled']=!empty($_POST['tg_enabled']);
+    $new['telegram']['token']=trim($_POST['tg_token']??$new['telegram']['token']);
+    $new['telegram']['chat']=trim($_POST['tg_chat']??$new['telegram']['chat']);
+
+    if(isset($_POST['theme']) && is_array($_POST['theme'])){
+      $t=$new['theme'];
+      $t['mode']  = in_array(($_POST['theme']['mode']??'light'),['light','dark'])?$_POST['theme']['mode']:'light';
+      $t['bg']    = sanitize_hex($_POST['theme']['bg']   ?? $t['bg']);
+      $t['text']  = sanitize_hex($_POST['theme']['text'] ?? $t['text']);
+      $t['muted'] = sanitize_hex($_POST['theme']['muted']?? $t['muted']);
+      $t['brand'] = sanitize_hex($_POST['theme']['brand']?? $t['brand']);
+      $t['accent']= sanitize_hex($_POST['theme']['accent']??$t['accent']);
+      $t['card_opacity']= clamp_float($_POST['theme']['card_opacity']??$t['card_opacity'], 0.3, 1.0, 0.65);
+      $t['blur']  = clamp_int($_POST['theme']['blur']??$t['blur'], 0, 30, 12);
+      $t['radius']= clamp_int($_POST['theme']['radius']??$t['radius'], 0, 28, 16);
+      $t['shadow']= clamp_float($_POST['theme']['shadow']??$t['shadow'], 0, 0.5, 0.12);
+      $t['container']= clamp_int($_POST['theme']['container']??$t['container'], 900, 1400, 1200);
+      $new['theme']=$t;
+    }
+
+    @file_put_contents($configFile, json_encode($new, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+    header('Location: ?admin=1&saved=1'); exit;
+  }
+
+  if (isset($_POST['admin_upload'])){
+    require_admin($cfg);
+    try{
+      $what=$_POST['what']??'';
+      if($what==='logo'){
+        $fn=save_upload_image('file',$uploadsDir);
+        $cfg['logo']='/uploads/'.$fn;
+      } elseif($what==='hero'){
+        $fn=save_upload_image('file',$uploadsDir);
+        $cfg['hero_mode']='image';
+        $cfg['hero_image']='/uploads/'.$fn;
+      } else { throw new Exception('Неизвестный тип загрузки'); }
+      @file_put_contents($configFile, json_encode($cfg, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT));
+      header('Location: ?admin=1&saved=1'); exit;
+    }catch(Exception $e){
+      header('Location: ?admin=1&err='.urlencode($e->getMessage())); exit;
+    }
+  }
+
+  if (isset($_POST['admin_test_email'])){ require_admin($cfg); [$ok,$errs]=send_email_all($cfg,'Тест SmartPrint', 'Тест с '.$cfg['site'].' '.date('Y-m-d H:i:s')); header('Location: ?admin=1&test_email='.($ok?'ok':'fail')); exit; }
+  if (isset($_POST['admin_test_tg'])){ require_admin($cfg); [$ok,$err]=tg_send_message_cfg($cfg,'Тест Telegram '.date('Y-m-d H:i:s')); header('Location: ?admin=1&test_tg='.($ok?'ok':'fail')); exit; }
+
+  if (isset($_POST['tg_delete_webhook'])){ require_admin($cfg);
+    try{ tg_api($cfg['telegram']['token'],'deleteWebhook'); header('Location: ?admin=1&tg_webhook=deleted'); }
+    catch(Throwable $e){ header('Location: ?admin=1&tg_webhook=err'); } exit;
+  }
+  if (isset($_POST['tg_get_updates'])){ require_admin($cfg);
+    $_SESSION['tg_updates'] = null;
+    try{ $res = tg_api($cfg['telegram']['token'],'getUpdates', ['timeout'=>0]); $_SESSION['tg_updates']=$res; header('Location: ?admin=1&tg_updates=ok'); }
+    catch(Throwable $e){ header('Location: ?admin=1&tg_updates=err'); }
+    exit;
+  }
+  if (isset($_POST['tg_use_chat'])){ require_admin($cfg);
+    $chat = trim($_POST['chat']??'');
+    if ($chat!==''){ $cfg['telegram']['chat']=$chat; @file_put_contents($configFile, json_encode($cfg, JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)); header('Location: ?admin=1&tg_chat=saved'); }
+    else { header('Location: ?admin=1&tg_chat=err'); }
+    exit;
+  }
+}
+
+/* Admin UI с умными загрузчиками */
+if (isset($_GET['admin'])):
+  $isLogin = isset($_GET['login']) || empty($_SESSION['is_admin']);
+  ?><!doctype html><html lang='ru'><head>
+  <meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Админ — <?=esc($cfg['brand'])?></title>
+  <style>
+    :root{--bg:#0f1115;--panel:#151a22;--muted:#a7b0c0;--brand:#FFD400;--accent:#2D5BFF;--ok:#66e38a;--bad:#ff7a7a;--text:#e9eef7}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Arial,Roboto}
+    .wrap{max-width:1200px;margin:0 auto;padding:16px}
+    .card{background:var(--panel);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;margin-bottom:16px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media(max-width:980px){.row{grid-template-columns:1fr}}
+    input,textarea,select{width:100%;background:#121825;border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:12px;padding:10px;box-sizing:border-box}
+    .btn{background:linear-gradient(90deg,var(--accent),#00c2ff);border:none;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+    .btn2{background:#1b2232;border:1px solid rgba(255,255,255,.15);color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+    .muted{color:var(--muted)}
+    table{width:100%;border-collapse:collapse} th,td{padding:8px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+    .ok{color:var(--ok)} .bad{color:var(--bad)}
+
+    /* УМНЫЕ ЗАГРУЗЧИКИ */
+    .drop{position:relative;display:grid;place-items:center;min-height:130px;border:1.5px dashed rgba(255,255,255,.25);border-radius:14px;background:#0f1624;cursor:pointer;transition:all 0.3s}
+    .drop.hover{background:#0c1220;border-color:var(--brand)}
+    .drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+    .drop-content{text-align:center;pointer-events:none}
+    .drop-icon{font-size:32px;margin-bottom:8px;opacity:0.7}
+    .drop-text{font-size:14px;font-weight:600;margin-bottom:4px}
+    .drop-hint{font-size:12px;opacity:0.6}
+    .drop.has-image{border-style:solid;border-color:var(--brand)}
+    .drop-preview{max-width:100%;max-height:100px;border-radius:8px;margin-bottom:8px}
+    .drop-remove{position:absolute;top:8px;right:8px;background:rgba(255,0,0,.8);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:12px;display:none}
+    .drop.has-image .drop-remove{display:block}
+
+    .mini{font-size:12px}
+    .flex{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  </style>
+  <meta name='robots' content='noindex,nofollow'>
+  </head><body><div class='wrap'>
+  <h1>Админ — <?=esc($cfg['brand'])?></h1>
+  <?php if ($isLogin): ?>
+    <div class='card'>
+      <h3>Вход</h3>
+      <?php if(isset($_GET['err'])): ?><div class='bad'>Неверный пароль</div><?php endif; ?>
+      <form method='post'><input type='password' name='password' placeholder='Пароль (config.json -> admin_pass)' required>
+        <div style='margin-top:10px'><button class='btn' name='admin_login' value='1'>Войти</button></div>
+      </form>
+      <div class='muted mini' style='margin-top:8px'>Пароль по умолчанию: <?=esc($cfg['admin_pass'])?> — смените.</div>
+    </div>
+  <?php else: ?>
+    <div class='row'>
+      <div class='card'>
+        <h3>Заявки и чат-логи</h3>
+        <div class='muted mini'>Последние 200 записей</div>
+        <div style='max-height:420px;overflow:auto;margin-top:8px'>
+          <table><tr><th>Время</th><th>Имя</th><th>Телефон</th><th>Услуга</th><th>Цена</th><th>Оплата</th><th>Файл</th></tr>
+          <?php
+            $lines=@file($ordersLog, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES)?:[];
+            $lines=array_slice(array_reverse($lines),0,200);
+            foreach($lines as $line){
+              if(!preg_match('~^$$(.*?)$$\s*(\{.+\})$~u',$line,$m)) continue;
+              $ts=$m[1]; $j=json_decode($m[2],true);
+              echo '<tr>';
+              echo '<td>'.esc($ts).'</td>';
+              echo '<td>'.esc($j['name']??'').'</td>';
+              echo '<td>'.esc($j['phone']??'').'</td>';
+              echo '<td>'.esc($j['service']??$j['type']??'').'</td>';
+              echo '<td>'.esc($j['price']??'').'</td>';
+              echo '<td>'.esc($j['payment_method']??'').'</td>';
+              if(!empty($j['file'])){ $f=basename($j['file']); echo '<td><a href=\'uploads/'.esc($f).'\' target=\'_blank\'>скачать</a></td>'; }
+              else echo '<td class=\'muted\'>—</td>';
+              echo '</tr>';
+            }
+          ?>
+          </table>
+        </div>
+        <form method='post' class='flex' style='margin-top:10px'>
+          <button class='btn' name='admin_test_email' value='1'>Тест Email</button>
+          <?php if(isset($_GET['test_email'])): ?><span class='<?=($_GET['test_email']==='ok'?'ok':'bad')?>'><?=($_GET['test_email']==='ok'?'OK':'Ошибка')?></span><?php endif; ?>
+          <button class='btn2' name='admin_test_tg' value='1'>Тест Telegram</button>
+          <?php if(isset($_GET['test_tg'])): ?><span class='<?=($_GET['test_tg']==='ok'?'ok':'bad')?>'><?=($_GET['test_tg']==='ok'?'OK':'Ошибка')?></span><?php endif; ?>
+        </form>
+      </div>
+
+      <div class='card'>
+        <h3>🎨 Логотип и изображения</h3>
+        <?php if(isset($_GET['saved'])): ?><div class='ok'>Сохранено</div><?php endif; ?>
+        <?php if(isset($_GET['err'])): ?><div class='bad'><?=esc($_GET['err'])?></div><?php endif; ?>
+
+        <div class='row' style='margin-top:12px'>
+          <div>
+            <h4>Логотип</h4>
+            <form method='post' enctype='multipart/form-data' id='logoForm'>
+              <input type='hidden' name='admin_upload' value='1'>
+              <input type='hidden' name='what' value='logo'>
+              <div class='drop <?=!empty($cfg['logo'])?'has-image':''?>' id='logoDrop'>
+                <input type='file' name='file' accept='image/*' onchange='handleFileUpload(this, "logoDrop", "logoForm")'>
+                <button type='button' class='drop-remove' onclick='removeImage("logoDrop", "logo")'>✕</button>
+                <div class='drop-content'>
+                  <?php if(!empty($cfg['logo'])): ?>
+                    <img src='<?=esc($cfg['logo'])?>' class='drop-preview' alt='Логотип'>
+                    <div class='drop-text'>Логотип загружен</div>
+                    <div class='drop-hint'>Нажмите для замены</div>
+                  <?php else: ?>
+                    <div class='drop-icon'>🖼️</div>
+                    <div class='drop-text'>Загрузить логотип</div>
+                    <div class='drop-hint'>PNG, JPG, SVG до 10 МБ</div>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <div>
+            <h4>Hero изображение</h4>
+            <form method='post' enctype='multipart/form-data' id='heroForm'>
+              <input type='hidden' name='admin_upload' value='1'>
+              <input type='hidden' name='what' value='hero'>
+              <div class='drop <?=($cfg['hero_mode']==='image'&&!empty($cfg['hero_image']))?'has-image':''?>' id='heroDrop'>
+                <input type='file' name='file' accept='image/*' onchange='handleFileUpload(this, "heroDrop", "heroForm")'>
+                <button type='button' class='drop-remove' onclick='removeImage("heroDrop", "hero")'>✕</button>
+                <div class='drop-content'>
+                  <?php if($cfg['hero_mode']==='image'&&!empty($cfg['hero_image'])): ?>
+                    <img src='<?=esc($cfg['hero_image'])?>' class='drop-preview' alt='Hero изображение'>
+                    <div class='drop-text'>Hero изображение загружено</div>
+                    <div class='drop-hint'>Нажмите для замены</div>
+                  <?php else: ?>
+                    <div class='drop-icon'>🎨</div>
+                    <div class='drop-text'>Загрузить hero изображение</div>
+                    <div class='drop-hint'>PNG, JPG до 10 МБ</div>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class='card'>
+      <h3>Основные настройки</h3>
+      <form method='post'>
+        <div class='row'>
+          <div><label>Название<br><input name='brand' value='<?=esc($cfg['brand'])?>'></label></div>
+          <div><label>Слоган<br><input name='slogan' value='<?=esc($cfg['slogan'])?>'></label></div>
+        </div>
+        <div class='row'>
+          <div><label>Телефон (видимый)<br><input name='phone_display' value='<?=esc($cfg['phone_display'])?>'></label></div>
+          <div><label>Телефон (raw)<br><input name='phone_raw' value='<?=esc($cfg['phone_raw'])?>'></label></div>
+        </div>
+
+        <div class='card' style='margin:12px 0;border:2px solid var(--brand)'>
+          <h4>💳 ЮКасса (онлайн платежи)</h4>
+          <div style='margin-top:8px'><label><input type='checkbox' name='yukassa[enabled]' <?=!empty($cfg['yukassa']['enabled'])?'checked':''?>> Включить онлайн платежи</label></div>
+          <div class='row' style='margin-top:8px'>
+            <div><label>Shop ID<br><input name='yukassa[shop_id]' value='<?=esc($cfg['yukassa']['shop_id'])?>' placeholder='123456'></label></div>
+            <div><label>Secret Key<br><input name='yukassa[secret_key]' type='password' value='<?=!empty($cfg['yukassa']['secret_key'])?'__KEEP__':''?>' placeholder='live_...'></label></div>
+          </div>
+          <div class='row' style='margin-top:8px'>
+            <div><label>Return URL<br><input name='yukassa[return_url]' value='<?=esc($cfg['yukassa']['return_url'])?>'></label></div>
+            <div><label><input type='checkbox' name='yukassa[test_mode]' <?=!empty($cfg['yukassa']['test_mode'])?'checked':''?>> Тестовый режим</label></div>
+          </div>
+          <div class='mini muted' style='margin-top:4px'>Получите данные в личном кабинете ЮКасса. В тестовом режиме платежи не проходят реально.</div>
+        </div>
+
+        <div><label>Email получателя<br><input name='email_to' value='<?=esc($cfg['email_to'])?>'></label></div>
+        <div><label>Адрес<br><input name='address' value='<?=esc($cfg['address'])?>'></label></div>
+
+        <div class='card' style='margin:12px 0'>
+          <h4>🎨 Тема оформления</h4>
+          <div class='row'>
+            <div><label>Цвет бренда<br><input name='theme[brand]' type='color' value='<?=esc($cfg['theme']['brand'])?>'></label></div>
+            <div><label>Акцентный цвет<br><input name='theme[accent]' type='color' value='<?=esc($cfg['theme']['accent'])?>'></label></div>
+          </div>
+          <div class='row' style='margin-top:8px'>
+            <div><label>Прозрачность карт<br><input name='theme[card_opacity]' type='range' min='0.3' max='1' step='0.05' value='<?=esc($cfg['theme']['card_opacity'])?>'></label></div>
+            <div><label>Размытие<br><input name='theme[blur]' type='range' min='0' max='30' value='<?=esc($cfg['theme']['blur'])?>'></label></div>
+          </div>
+        </div>
+
+        <div style='margin-top:10px'><button class='btn' name='admin_save' value='1'>Сохранить</button></div>
+      </form>
+    </div>
+
+    <div class='row'>
+      <div class='card'>
+        <h3>📧 Email настройки</h3>
+        <form method='post'>
+          <div><label><input type='checkbox' name='smtp_enabled' <?=!empty($cfg['smtp']['enabled'])?'checked':''?>> Использовать SMTP</label></div>
+          <div class='row' style='margin-top:8px'>
+            <div><label>SMTP хост<br><input name='smtp_host' value='<?=esc($cfg['smtp']['host'])?>' placeholder='smtp.mail.ru'></label></div>
+            <div><label>Порт<br><input name='smtp_port' type='number' value='<?=esc($cfg['smtp']['port'])?>' placeholder='465'></label></div>
+          </div>
+          <div class='row' style='margin-top:8px'>
+            <div><label>Пользователь<br><input name='smtp_user' value='<?=esc($cfg['smtp']['user'])?>' placeholder='user@mail.ru'></label></div>
+            <div><label>Пароль<br><input name='smtp_pass' type='password' value='<?=!empty($cfg['smtp']['pass'])?'__KEEP__':''?>' placeholder='password'></label></div>
+          </div>
+          <div style='margin-top:10px'><button class='btn' name='admin_save' value='1'>Сохранить Email</button></div>
+        </form>
+      </div>
+
+      <div class='card'>
+        <h3>📱 Telegram настройки</h3>
+        <form method='post'>
+          <div><label><input type='checkbox' name='tg_enabled' <?=!empty($cfg['telegram']['enabled'])?'checked':''?>> Включить Telegram</label></div>
+          <div><label>Bot Token<br><input name='tg_token' value='<?=esc($cfg['telegram']['token'])?>' placeholder='123456789:ABC...'></label></div>
+          <div><label>Chat ID<br><input name='tg_chat' value='<?=esc($cfg['telegram']['chat'])?>' placeholder='-100123456789'></label></div>
+
+          <div class='flex' style='margin-top:10px'>
+            <button class='btn' name='admin_save' value='1'>Сохранить TG</button>
+            <button class='btn2' name='tg_delete_webhook' value='1'>Удалить Webhook</button>
+            <button class='btn2' name='tg_get_updates' value='1'>Получить Updates</button>
+          </div>
+
+          <?php if(isset($_SESSION['tg_updates']) && is_array($_SESSION['tg_updates'])): ?>
+          <div style='margin-top:8px'>
+            <div class='muted mini'>Последние сообщения:</div>
+            <?php foreach(array_slice($_SESSION['tg_updates'], -5) as $u): ?>
+            <?php if(isset($u['message'])): $msg=$u['message']; ?>
+            <div style='background:#1a1f2b;padding:6px;margin:4px 0;border-radius:6px;font-size:12px'>
+              Chat: <?=esc($msg['chat']['id'])?> | <?=esc($msg['from']['first_name']??'')?> <?=esc($msg['from']['last_name']??'')?><br>
+              <?=esc(mb_substr($msg['text']??'',0,100))?>
+              <form method='post' style='display:inline;margin-left:8px'>
+                <input type='hidden' name='chat' value='<?=esc($msg['chat']['id'])?>'>
+                <button class='btn2' name='tg_use_chat' value='1' style='padding:2px 6px;font-size:10px'>Использовать</button>
+              </form>
+            </div>
+            <?php endif; ?>
+            <?php endforeach; ?>
+          </div>
+          <?php endif; ?>
+        </form>
+      </div>
+    </div>
+  <?php endif; ?>
+
+  <script>
+    // УМНЫЕ ЗАГРУЗЧИКИ
+    function handleFileUpload(input, dropId, formId) {
+      if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const drop = document.getElementById(dropId);
+        const form = document.getElementById(formId);
+
+        // Проверяем размер файла (макс. 10 МБ)
+        if (file.size > 10 * 1024 * 1024) {
+          alert('Файл слишком большой! Максимум 10 МБ.');
+          input.value = '';
+          return;
+        }
+
+        // Показываем превью
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const content = drop.querySelector('.drop-content');
+          content.innerHTML = `
+            <img src="${e.target.result}" class="drop-preview" alt="Превью">
+            <div class="drop-text">Файл готов к загрузке</div>
+            <div class="drop-hint">Нажмите для замены</div>
+          `;
+          drop.classList.add('has-image');
+        };
+        reader.readAsDataURL(file);
+
+        // Автоматически отправляем форму
+        setTimeout(() => {
+          form.submit();
+        }, 500);
+      }
+    }
+
+    function removeImage(dropId, type) {
+      if (confirm('Удалить изображение?')) {
+        const drop = document.getElementById(dropId);
+
+        if (type === 'logo') {
+          drop.querySelector('.drop-content').innerHTML = `
+            <div class="drop-icon">🖼️</div>
+            <div class="drop-text">Загрузить логотип</div>
+            <div class="drop-hint">PNG, JPG, SVG до 10 МБ</div>
+          `;
+        } else {
+          drop.querySelector('.drop-content').innerHTML = `
+            <div class="drop-icon">🎨</div>
+            <div class="drop-text">Загрузить hero изображение</div>
+            <div class="drop-hint">PNG, JPG до 10 МБ</div>
+          `;
+        }
+
+        drop.classList.remove('has-image');
+
+        // Отправляем запрос на удаление
+        const form = new FormData();
+        form.append('admin_save', '1');
+        form.append(type === 'logo' ? 'logo' : 'hero_image', '');
+        form.append(type === 'logo' ? 'logo' : 'hero_mode', type === 'logo' ? '' : 'svg');
+
+        fetch(location.href, {
+          method: 'POST',
+          body: form
+        }).then(() => {
+          location.reload();
+        });
+      }
+    }
+
+    // Drag & Drop
+    document.querySelectorAll('.drop').forEach(drop => {
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        drop.addEventListener(eventName, preventDefaults, false);
+      });
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        drop.addEventListener(eventName, () => drop.classList.add('hover'), false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        drop.addEventListener(eventName, () => drop.classList.remove('hover'), false);
+      });
+
+      drop.addEventListener('drop', handleDrop, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      const input = e.target.querySelector('input[type="file"]');
+
+      if (files.length > 0) {
+        input.files = files;
+        const changeEvent = new Event('change', { bubbles: true });
+        input.dispatchEvent(changeEvent);
+      }
+    }
+  </script>
+  </div>
+  </body></html><?php exit; endif;
+
+/* Public site */
+$T = $cfg['theme'];
+$cardOpacity = is_numeric($T['card_opacity']) ? max(0.3, min(1, (float)$T['card_opacity'])) : 0.65;
+$blur = (int)$T['blur'];
+$radius = (int)$T['radius'];
+$shadow = (float)$T['shadow'];
+$container = (int)$T['container'];
+$muted = $T['muted'];
+$bg = $T['bg'];
+$text = $T['text'];
+$brandCol = $T['brand'];
+$accentCol = $T['accent'];
+
+$seoTitle = $cfg['seo']['title'] ?: ($cfg['brand'] . ' — типография | Фото 5 минут');
+$seoDescription = $cfg['seo']['description'] ?: ('Типография и фотоцентр: визитки, баннеры, листовки, фото на документы 5 минут. Красных Фортов, 49. Тел. ' . $cfg['phone_display']);
+$seoKeywords = $cfg['seo']['keywords'] ?: 'печать, типография, фотоцентр, визитки, баннеры, фото на документы, Сосновый Бор';
+$ogImage = $cfg['seo']['og_image'] ?: ('data:image/svg+xml;base64,' . base64_encode('<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'1200\' height=\'630\'><rect fill=\'#fff\' width=\'100%\' height=\'100%\'/><text x=\'50%\' y=\'54%\' fill=\'#000\' font-size=\'62\' font-family=\'Arial,sans-serif\' text-anchor=\'middle\'>'.$cfg['brand'].'</text></svg>'));
+?>
+<!doctype html>
+<html lang='ru'>
+<head>
+  <meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title><?=esc($seoTitle)?></title>
+  <meta name='description' content='<?=esc($seoDescription)?>'>
+  <meta name='keywords' content='<?=esc($seoKeywords)?>'>
+  <meta property='og:title' content='<?=esc($cfg['brand'])?>'><meta property='og:description' content='<?=esc($cfg['hero'])?>'>
+  <meta property='og:type' content='website'><meta property='og:url' content='<?=esc($cfg['site'])?>'>
+  <meta property='og:image' content='<?=esc($ogImage)?>'>
+  <link rel='icon' href='data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27><rect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27<?=urlencode($brandCol)?>%27/><path d=%27M14 40h36v6H14zM20 18h24l6 8v14H14V26z%27 fill=%27%23000%27/></svg>'>
+  <style>
+    :root{
+      --bg: <?=esc($bg)?>;
+      --text: <?=esc($text)?>;
+      --muted: <?=esc($muted)?>;
+      --brand: <?=esc($brandCol)?>;
+      --accent: <?=esc($accentCol)?>;
+      --card: rgba(255,255,255, <?=esc(number_format($cardOpacity,2,'.',''))?>) ;
+      --glass-blur: <?=esc($blur)?>px;
+      --radius: <?=esc($radius)?>px;
+      --shadow: 0 10px 30px rgba(0,0,0, <?=esc(number_format($shadow,2,'.',''))?>);
+      --grad1: linear-gradient(135deg, <?=esc($brandCol)?>, #FFB14D);
+      --grad2: linear-gradient(135deg, <?=esc($accentCol)?>, #00C2FF);
+      --container: <?=esc($container)?>px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.5}
+    body{
+      background:
+        radial-gradient(900px 300px at 70% -10%, rgba(45,91,255,.10), transparent 60%),
+        radial-gradient(700px 280px at 20% -20%, rgba(255,138,0,.12), transparent 70%),
+        var(--bg);
+    }
+    img{max-width:100%;height:auto;display:block}
+    a{color:inherit;text-decoration:none}
+    .wrap{max-width:var(--container);margin:0 auto;padding:0 16px}
+    .topbar{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.75);backdrop-filter:blur(var(--glass-blur)) saturate(160%);border-bottom:1px solid rgba(0,0,0,.08)}
+    .topflex{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;flex-wrap:wrap}
+    .logo{display:flex;gap:12px;align-items:center;min-width:0}
+    .logo-badge{width:44px;height:44px;border-radius:12px;background:var(--grad1);display:grid;place-items:center;color:#111;font-weight:900;flex:0 0 auto;overflow:hidden}
+    .logo-title{font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55vw}
+    .nav{display:flex;gap:8px;flex-wrap:wrap}
+    .nav a{color:#2c4360;padding:8px 12px;border-radius:10px;font-weight:500;transition:all 0.2s}
+    .nav a:hover{background:rgba(0,0,0,.08);color:#1a2b45}
+    .phone a{background:var(--brand);color:#111;padding:10px 16px;border-radius:12px;font-weight:700;display:inline-block;border:2px solid rgba(0,0,0,.06);transition:all 0.2s}
+    .phone a:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(255,138,0,.3)}
+    @media(max-width:560px){.phone a{width:100%;text-align:center}}
+    .hero{padding:clamp(24px,4vw,50px) 0 30px}
+    .row{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+    .col-6{grid-column:span 6}.col-12{grid-column:span 12}
+    @media(max-width:980px){.col-6{grid-column:span 12}}
+    h1{font-size:clamp(26px,4vw,42px);line-height:1.2;margin:10px 0 14px;font-weight:800}
+    h2{font-size:clamp(22px,3.2vw,30px);margin:0 0 14px;font-weight:700}
+    p{margin:0;line-height:1.6}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--card);border:1px solid rgba(0,0,0,.08);color:#7c5b00;backdrop-filter:blur(var(--glass-blur));font-weight:600;font-size:14px}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:12px;border:1px solid rgba(0,0,0,.1);background:var(--card);color:var(--text);font-weight:600;transition:all 0.2s;white-space:nowrap;backdrop-filter:blur(var(--glass-blur));cursor:pointer;font-size:14px;text-decoration:none}
+    .btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,0,0,.1)}
+    .btn-primary{background:var(--grad2);border:none;color:#fff;font-weight:700}
+    .btn-primary:hover{box-shadow:0 6px 25px rgba(45,91,255,.3)}
+    .btn-brand{background:var(--grad1);color:#111;border:none;font-weight:700}
+    .btn-brand:hover{box-shadow:0 6px 25px rgba(255,138,0,.3)}
+    .btn-outline{background:rgba(255,255,255,.8);border:2px solid var(--accent);color:var(--accent);font-weight:600}
+    .btn-outline:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:var(--card);color:#31456a;border:1px solid rgba(0,0,0,.08);font-size:13px;backdrop-filter:blur(var(--glass-blur));font-weight:500}
+    .muted{color:var(--muted)}
+    .panel{background:var(--card);border:1px solid rgba(0,0,0,.08);border-radius:var(--radius);backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow)}
+    .hero-media{aspect-ratio:16/10;border:1px solid rgba(0,0,0,.08);border-radius:var(--radius);overflow:hidden;background:var(--card);backdrop-filter:blur(var(--glass-blur))}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+    @media(max-width:1100px){.grid{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:560px){.grid{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid rgba(0,0,0,.08);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);transition:all 0.2s}
+    .card:hover{transform:translateY(-2px);box-shadow:0 12px 35px rgba(0,0,0,.12)}
+    .card-illustr{height:120px;display:grid;place-items:center;background:linear-gradient(180deg,rgba(0,0,0,.02),transparent)}
+    .card h3{margin:14px 18px 6px;font-size:clamp(16px,2.2vw,18px);font-weight:700;line-height:1.3}
+    .card small{margin:0 18px 10px;color:var(--muted);display:block;line-height:1.4;font-size:13px}
+    .card p{margin:0 18px 14px;color:#2b3f5f;font-weight:600;font-size:15px}
+    .card .actions{margin:12px 18px 18px;display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}
+    .card .actions .btn{padding:10px 14px;font-size:13px;font-weight:600;border-radius:10px;min-height:40px}
+    .card .actions .btn-primary{background:var(--grad2);color:#fff;border:none}
+    .card .actions .btn-outline{background:rgba(255,255,255,.9);border:1px solid rgba(45,91,255,.4);color:var(--accent);backdrop-filter:blur(8px)}
+    .card .actions .btn-outline:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .features{padding:30px 0}
+    .feature{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid rgba(0,0,0,.08);border-radius:var(--radius);padding:16px;backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow)}
+    .steps li{margin:8px 0;line-height:1.5}
+    .cta-strip{padding:24px 0;text-align:center;background:rgba(255,255,255,.75);backdrop-filter:blur(var(--glass-blur));border-block:1px solid rgba(0,0,0,.08)}
+    .footer{margin-top:30px;padding:22px 0;border-top:1px solid rgba(0,0,0,.08);background:rgba(255,255,255,.7);backdrop-filter:blur(var(--glass-blur))}
+    .floatactions{position:fixed;right:14px;bottom:14px;z-index:60;display:flex;flex-direction:column;gap:10px}
+    .fab{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid rgba(0,0,0,.08);color:var(--text);padding:12px 14px;border-radius:14px;backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow);transition:all 0.2s;text-decoration:none;font-weight:600}
+    .fab:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,.15)}
+    .fab-callback{background:var(--grad1);color:#000;animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+    dialog{border:none;border-radius:var(--radius);padding:0;max-width:560px;width:min(560px,92%);background:var(--card);color:var(--text);backdrop-filter:blur(var(--glass-blur))}
+    .modal-head{padding:16px 18px;border-bottom:1px solid rgba(0,0,0,.08);display:flex;align-items:center;justify-content:space-between}
+    .modal-body{padding:18px}
+    .form-row{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+    @media(max-width:560px){.form-row{grid-template-columns:1fr}}
+    input,select,textarea{width:100%;background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.12);padding:12px;border-radius:12px;color:#0b1a33;box-sizing:border-box;font-size:14px}
+    textarea{min-height:90px;resize:vertical}
+    .divider{height:1px;background:rgba(0,0,0,.08);margin:16px 0}
+    .calc{padding:26px 0}
+    .calc-box{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media(max-width:980px){.calc-box{grid-template-columns:1fr}}
+    .price-out{font-weight:800;font-size:clamp(18px,2.4vw,22px)}
+    @media (max-width: 768px){.topbar{position: static; top: auto;}}
+    @media (max-width: 560px){
+      .nav{overflow-x:auto; white-space:nowrap; -webkit-overflow-scrolling:touch; max-width:100%}
+      .nav a{flex:0 0 auto}
+    }
+    .payment-methods{margin:12px 0}
+    .payment-option{display:flex;align-items:center;gap:10px;margin:8px 0}
+    .payment-option input[type=radio]{margin:0;width:auto}
+    .payment-icons{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:18px 0}
+    .payment-icons svg{height:32px;width:auto;border-radius:6px;opacity:0.9}
+    .payment-icons svg:hover{opacity:1;transform:scale(1.02)}
+    .business-info{margin-top:18px;padding:18px;background:rgba(255,255,255,.6);border-radius:var(--radius);font-size:14px;line-height:1.5}
+    .business-info .row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+    @media(max-width:600px){.business-info .row{grid-template-columns:1fr}}
+    .social-links{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+    .social-links a{background:var(--card);padding:10px 12px;border-radius:12px;border:1px solid rgba(0,0,0,.08);font-size:14px;font-weight:500;transition:all 0.2s}
+    .social-links a:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
+    .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:22px 0}
+    .stat-item{text-align:center;background:var(--card);padding:18px;border-radius:var(--radius);border:1px solid rgba(0,0,0,.08);backdrop-filter:blur(var(--glass-blur))}
+    .stat-number{font-size:32px;font-weight:800;color:var(--brand)}
+    @media(max-width:600px){.stats-grid{grid-template-columns:1fr}}
+
+    @media (max-width: 480px) {
+      .hero{padding:18px 0 22px}
+      .calc-box{gap:14px}
+      .grid{gap:14px}
+      .fab{padding:10px 12px;font-size:14px}
+    }
+  </style>
+</head>
+<body>
+
+<header class='topbar'>
+  <div class='wrap topflex'>
+    <div class='logo'>
+      <div class='logo-badge'>
+        <?php if (!empty($cfg['logo']) && file_exists($_SERVER['DOCUMENT_ROOT'] . $cfg['logo'])): ?>
+          <img src='<?=esc($cfg['logo'])?>' alt='Логотип' style='width:100%;height:100%;object-fit:cover;border-radius:12px'>
+        <?php else: ?>
+          П
+        <?php endif; ?>
+      </div>
+      <div>
+        <div class='logo-title'><?=esc($cfg['brand'])?></div>
+        <div class='muted' style='font-size:12px'><?=esc($cfg['slogan'])?></div>
+      </div>
+    </div>
+   <nav class='nav' aria-label='Навигация'>
+  <a href='#catalog'>Каталог</a>
+  <a href='#calc'>Калькулятор</a>
+  <a href='products.php'>🛍️ Товары</a> <!-- НОВАЯ ССЫЛКА -->
+  <a href='https://printc47.ru/public/photoconstructor.html' target='_blank'>Фото онлайн</a>
+  <a href='https://printc47.ru/public/banner_calculator.html' target='_blank'>Кальк. баннеров</a>
+  <a href='#services'>Услуги</a>
+  <a href='#how'>Как заказать</a>
+  <a href='#contacts'>Контакты</a>
+</nav>
+    <div class='phone'><a href='tel:<?=esc($cfg['phone_raw'])?>'><?=esc($cfg['phone_display'])?></a></div>
+  </div>
+</header>
+
+<section class='hero'>
+  <div class='wrap row'>
+    <div class='col-6'>
+      <div class='pill'>⚡ Быстро • Рядом • Без сюрпризов</div>
+      <h1><?=esc($cfg['hero'])?></h1>
+      <p class='muted' style='margin-bottom:14px'>Печать документов, визиток, баннеров, листовок, сувенирки. Проверим макет бесплатно, подскажем материалы и сроки. Оплата картой и по безналу.</p>
+
+      <div class='stats-grid'>
+        <div class='stat-item'>
+          <div class='stat-number'>5</div>
+          <div class='muted'>минут на фото</div>
+        </div>
+        <div class='stat-item'>
+          <div class='stat-number'>2-4</div>
+          <div class='muted'>часа баннер</div>
+        </div>
+        <div class='stat-item'>
+          <div class='stat-number'>100+</div>
+          <div class='muted'>видов услуг</div>
+        </div>
+      </div>
+
+      <div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:16px'>
+        <button class='btn btn-brand' onclick='openOrder("Фото на документы", "от 400 ₽")'>Сделать фото за 5 минут</button>
+        <a class='btn btn-primary' href='#catalog'>Каталог услуг</a>
+        <button class='btn' onclick='openCallback()'>📞 Обратный звонок</button>
+      </div>
+      <div style='margin-top:10px;display:flex;gap:12px;flex-wrap:wrap'>
+        <a class='btn btn-outline' target='_blank' href='https://printc47.ru/public/photoconstructor.html'>🖼️ Заказ фото онлайн</a>
+        <a class='btn btn-outline' target='_blank' href='https://printc47.ru/public/banner_calculator.html'>📐 Калькулятор баннеров</a>
+      </div>
+      <div style='margin-top:12px' class='muted'>Адрес: <?=esc($cfg['address'])?> • Рядом: OZON и «Саша Суши»</div>
+      <div style='margin-top:8px;display:flex;gap:10px;flex-wrap:wrap'>
+        <?php foreach($cfg['workhours'] as $w): ?><span class='badge'>🕒 <?=esc($w)?></span><?php endforeach; ?>
+      </div>
+    </div>
+    <div class='col-6'>
+      <div class='hero-media'>
+      <?php if ($cfg['hero_mode']==='image' && !empty($cfg['hero_image'])): ?>
+        <img src='<?=esc($cfg['hero_image'])?>' alt='Фотоцентр' style='width:100%;height:100%;object-fit:cover'>
+      <?php else: ?>
+        <svg viewBox='0 0 640 400' width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>
+          <defs>
+            <linearGradient id='g1' x1='0' x2='1' y1='0' y2='1'><stop offset='0' stop-color='<?=esc($brandCol)?>'/><stop offset='1' stop-color='#FFB14D'/></linearGradient>
+            <linearGradient id='g2' x1='0' x2='1' y1='1' y2='0'><stop offset='0' stop-color='<?=esc($accentCol)?>'/><stop offset='1' stop-color='#00C2FF'/></linearGradient>
+          </defs>
+          <rect width='640' height='400' fill='#f6f9ff'/>
+          <g opacity='.25'><circle cx='520' cy='80' r='120' fill='url(#g2)'/><circle cx='120' cy='320' r='150' fill='url(#g1)'/></g>
+          <g transform='translate(100,90)'><rect x='0' y='0' rx='14' width='280' height='200' fill='rgba(255,255,255,.75)' stroke='rgba(0,0,0,.08)'/><rect x='16' y='16' width='248' height='120' rx='8' fill='url(#g2)' opacity='.9'/><rect x='16' y='148' width='140' height='20' rx='6' fill='#e6eefc'/><rect x='16' y='174' width='120' height='12' rx='6' fill='#d9e5fb'/></g>
+          <g transform='translate(340,110)'><rect x='0' y='0' rx='14' width='200' height='160' fill='rgba(255,255,255,.75)' stroke='rgba(0,0,0,.08)'/><circle cx='100' cy='70' r='46' fill='url(#g1)'/><rect x='40' y='130' width='120' height='12' rx='6' fill='#d9e5fb'/></g>
+          <text x='50%' y='92%' text-anchor='middle' font-family='Inter,Arial' font-weight='800' font-size='22' fill='#0e1220'>Быстрая печать и фото</text>
+        </svg>
+      <?php endif; ?>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id='calc' class='wrap calc'>
+  <h2>Онлайн‑калькулятор</h2>
+  <div class='calc-box'>
+    <div class='card' style='padding:16px'>
+      <h3 style='margin:0 0 12px'>Параметры</h3>
+      <div class='form-row'>
+        <div><label>Тип изделия<br>
+          <select id='calcType'>
+            <option value='cards'>Визитки</option>
+            <option value='flyers'>Листовки</option>
+            <option value='banner'>Баннер</option>
+            <option value='photo'>Фотопечать</option>
+            <option value='stickers'>Наклейки</option>
+            <option value='stamps'>Штампы</option>
+          </select>
+        </label></div>
+        <div id='calcDynamicA'></div>
+      </div>
+      <div id='calcMore' class='form-row' style='margin-top:10px'></div>
+      <div class='divider'></div>
+      <div class='price-out'>Итого: <span id='calcPrice'>0 ₽</span></div>
+      <div class='muted' id='calcNote' style='margin-top:8px'></div>
+      <div style='margin-top:12px;display:flex;gap:12px;flex-wrap:wrap'>
+        <button class='btn btn-primary' id='calcOrder'>Заказать по расчёту</button>
+        <button class='btn' id='calcReset'>Сброс</button>
+        <a class='btn btn-outline' target='_blank' href='https://printc47.ru/public/banner_calculator.html'>📐 Отдельный калькулятор баннеров</a>
+      </div>
+    </div>
+    <div class='card' style='padding:16px'>
+      <h3 style='margin:0 0 12px'>Подсказки и популярные услуги</h3>
+      <ul class='muted' style='font-size:14px;line-height:1.5'>
+        <li><strong>Визитки:</strong> печать 1 день, мелованная 300 г/м², тираж от 100 шт.</li>
+        <li><strong>Листовки:</strong> A6/A5/A4, одно/двусторонние, срок 1-2 дня.</li>
+        <li><strong>Баннер:</strong> ПВХ 440 г/м², люверсы, проварка. Срочно 2–4 часа.</li>
+        <li><strong>Фото:</strong> 10×15, 15×21, 20×30 — готово через 10 минут.</li>
+        <li><strong>Наклейки:</strong> самоклеящиеся, фигурная резка по контуру.</li>
+        <li><strong>Штампы:</strong> автоматические оснастки, изготовление в день заказа.</li>
+      </ul>
+      <div class='muted' style='margin-top:10px;font-size:13px'>💡 Расчет подставится в заявку, менеджер уточнит детали и сроки.</div>
+      <div class='divider'></div>
+      <div style='display:flex;gap:10px;flex-wrap:wrap'>
+        <a class='btn btn-primary' target='_blank' href='https://printc47.ru/public/photoconstructor.html'>🖼️ Заказ фото онлайн</a>
+        <button class='btn' onclick='openCallback()'>📞 Быстрый расчет по телефону</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id='catalog' class='wrap' style='padding:24px 0'>
+  <div style='display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:10px'>
+    <h2 style='margin:0'>Каталог услуг</h2>
+    <span class='muted'><?=esc($cfg['catalog_desc'])?></span>
+  </div>
+  <div class='grid'>
+    <?php
+      $services = [
+        ['Фото на документы','от 400 ₽','id-card'],
+        ['Печать документов A4/A3','от 20 ₽/лист','docs'],
+        ['Печать визиток','от 900 ₽/100 шт','cards'],
+        ['Печать листовок','цены уточняйте','flyer'],
+        ['Печать баннеров','от 1100 ₽','banner'],
+        ['Печать плакатов/постеров','от 250 ₽','poster'],
+        ['Печать фотографий','от 30 ₽/шт','photo'],
+        ['Печать наклеек/стикеров','от 350 ₽/м²','sticker'],
+        ['Печать на футболках','от 1200 ₽','tshirt'],
+        ['Печать на кружках','от 600 ₽','mug'],
+        ['Ламинация и брошюровка','от 60 ₽','lam'],
+        ['Штампы/печати','от 1800 ₽','stamp'],
+        ['Печать на пленке','цены уточняйте','film'],
+        ['Проявка пленки','быстро и качественно','develop'],
+        ['Копирование и сканирование','от 10 ₽/стр','copy'],
+        ['Печать на холсте','срок 1–2 дня','canvas'],
+      ];
+      $service_info = [
+        'Фото на документы'=>'5–10 минут. Электронная версия бесплатно. Детская, семейная, стандартные форматы.',
+        'Печать документов A4/A3'=>'Срочная распечатка, копирование и сканирование. Ч/б и цветная печать.',
+        'Печать визиток'=>'Мелованная/дизайнерская бумага, ламинация, скругление углов. Срок: 1 день.',
+        'Печать листовок'=>'A6/A5/A4, одно/двусторонние, бумага 130–170 г/м². Тираж от 100 шт.',
+        'Печать баннеров'=>'ПВХ 440 г/м², люверсы и проварка по краям. Срочно за 2–4 часа.',
+        'Печать плакатов/постеров'=>'A3/A2/A1, плотная бумага, яркие цвета, быстрые сроки.',
+        'Печать фотографий'=>'10×15, 15×21, 20×30 — мат/глянец, готово через 10 минут.',
+        'Печать наклеек/стикеров'=>'Самоклеящаяся пленка ПВХ, фигурная резка по контуру.',
+        'Печать на футболках'=>'DTF/термотрансфер. От 1 шт. Стойкая печать и яркие цвета.',
+        'Печать на кружках'=>'Сублимация. Белые и цветные кружки, подарок за 1 час.',
+        'Ламинация и брошюровка'=>'Папки, пружина, ламинация 80–250 мкм. Аккуратно и быстро.',
+        'Штампы/печати'=>'Изготовление в день заказа. Автоматические оснастки.',
+        'Печать на пленке'=>'Для витрин, авто и интерьера. Мат/глянец, плоттерная резка.',
+        'Проявка пленки'=>'Бережная обработка. Сканирование в высоком качестве.',
+        'Копирование и сканирование'=>'Сканирование до A3, отправим на e-mail/телефон.',
+        'Печать на холсте'=>'Натяжка на подрамник, по желанию защитный лак.'
+      ];
+      function icon_svg($key){
+        $defs = '<defs><linearGradient id=\'ico\' x1=\'0\' y1=\'0\' x2=\'1\' y2=\'1\'><stop offset=\'0\' stop-color=\'#FF8A00\'/><stop offset=\'1\' stop-color=\'#FFB14D\'/></linearGradient></defs>';
+        $bg = '<circle cx=\'32\' cy=\'32\' r=\'30\' fill=\'rgba(0,0,0,.04)\' stroke=\'rgba(0,0,0,.06)\' />';
+        $style = 'stroke=\'url(#ico)\' stroke-width=\'2.2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' fill=\'none\'';
+        $map = [
+          'id-card'=>'<rect x=\'14\' y=\'18\' width=\'36\' height=\'28\' rx=\'4\' '.$style.'/><circle cx=\'24\' cy=\'30\' r=\'3\' '.$style.'/><path d=\'M22 36h8\' '.$style.'/><path d=\'M34 26h10M34 31h10M34 36h8\' '.$style.'/>',
+          'docs'=>'<rect x=\'18\' y=\'14\' width=\'28\' height=\'36\' rx=\'4\' '.$style.'/><path d=\'M22 24h20M22 30h14M22 36h12\' '.$style.'/>',
+          'cards'=>'<rect x=\'12\' y=\'22\' width=\'40\' height=\'20\' rx=\'4\' '.$style.'/><path d=\'M12 28h40\' '.$style.'/>',
+          'flyer'=>'<rect x=\'18\' y=\'14\' width=\'16\' height=\'36\' rx=\'3\' '.$style.'/><rect x=\'30\' y=\'20\' width=\'16\' height=\'30\' rx=\'3\' '.$style.'/>',
+          'banner'=>'<rect x=\'12\' y=\'20\' width=\'40\' height=\'16\' rx=\'3\' '.$style.'/><path d=\'M16 36v6M40 36v6\' '.$style.'/>',
+          'poster'=>'<rect x=\'16\' y=\'12\' width=\'32\' height=\'40\' rx=\'4\' '.$style.'/><circle cx=\'32\' cy=\'30\' r=\'6\' '.$style.'/>',
+          'photo'=>'<rect x=\'12\' y=\'16\' width=\'40\' height=\'32\' rx=\'4\' '.$style.'/><circle cx=\'26\' cy=\'30\' r=\'4\' '.$style.'/><path d=\'M30 36l4-4 8 8\' '.$style.'/>',
+          'sticker'=>'<path d=\'M20 16h16a8 8 0 0 1 8 8v16H28a8 8 0 0 1-8-8V16z\' '.$style.'/><path d=\'M44 24v16\' '.$style.'/>',
+          'tshirt'=>'<path d=\'M24 18l8-4 8 4 6-4 4 8-6 4v16a4 4 0 0 1-4 4H28a4 4 0 0 1-4-4V26l-6-4 4-8z\' '.$style.'/>',
+          'mug'=>'<rect x=\'16\' y=\'22\' width=\'18\' height=\'22\' rx=\'4\' '.$style.'/><path d=\'M34 26h6a6 6 0 0 1 0 12h-6\' '.$style.'/>',
+          'lam'=>'<rect x=\'14\' y=\'24\' width=\'36\' height=\'16\' rx=\'4\' '.$style.'/><rect x=\'20\' y=\'28\' width=\'24\' height=\'8\' rx=\'3\' '.$style.'/>',
+          'stamp'=>'<path d=\'M32 14a6 6 0 0 1 6 6c0 2.4-1.4 4.4-3.4 5.4L36 32H28l1.4-6.6A6 6 0 0 1 26 20a6 6 0 0 1 6-6z\' '.$style.'/><rect x=\'18\' y=\'34\' width=\'28\' height=\'6\' rx=\'2\' '.$style.'/>',
+          'film'=>'<rect x=\'14\' y=\'16\' width=\'36\' height=\'32\' rx=\'4\' '.$style.'/><path d=\'M24 16v32M40 16v32M14 24h36M14 32h36\' '.$style.'/>',
+          'develop'=>'<rect x=\'16\' y=\'18\' width=\'32\' height=\'28\' rx=\'4\' '.$style.'/><circle cx=\'32\' cy=\'32\' r=\'6\' '.$style.'/>',
+          'copy'=>'<rect x=\'18\' y=\'16\' width=\'20\' height=\'32\' rx=\'4\' '.$style.'/><rect x=\'28\' y=\'20\' width=\'20\' height=\'28\' rx=\'4\' '.$style.'/>',
+          'canvas'=>'<rect x=\'16\' y=\'18\' width=\'32\' height=\'24\' rx=\'3\' '.$style.'/><path d=\'M24 18v-6M40 18v-6M22 42h20\' '.$style.'/>',
+          'poster2'=>'<rect x=\'16\' y=\'12\' width=\'32\' height=\'40\' rx=\'4\' '.$style.'/>'
+        ];
+        $p = $map[$key] ?? $map['poster2'];
+        return '<svg width=\'80\' height=\'80\' viewBox=\'0 0 64 64\' xmlns=\'http://www.w3.org/2000/svg\'>'.$defs.$bg.$p.'</svg>';
+      }
+    ?>
+    <?php foreach($services as $s): $title=$s[0]; $price=$s[1]; $key=$s[2]; ?>
+      <div class='card' data-service='<?=esc($title)?>'>
+        <div class='card-illustr'><?=icon_svg($key)?></div>
+        <h3><?=esc($title)?></h3>
+        <small><?=esc($service_info[$title] ?? '')?></small>
+        <p><?=esc($price)?></p>
+        <div class='actions'>
+          <button class='btn btn-primary' onclick='openOrder("<?=esc($title)?>","<?=esc($price)?>")'>Заказать</button>
+          <?php if($key==='banner'): ?>
+            <a class='btn btn-outline' target='_blank' href='https://printc47.ru/public/banner_calculator.html'>📐 Калькулятор</a>
+          <?php endif; ?>
+          <?php if($key==='id-card'): ?>
+            <a class='btn btn-outline' target='_blank' href='https://printc47.ru/public/photoconstructor.html'>🖼️ Фото онлайн</a>
+          <?php endif; ?>
+          <button class='btn btn-outline' onclick='showInfo("<?=esc($title)?>")'>Подробнее</button>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+</section>
+
+<section id='services' class='wrap features'>
+  <div class='row'>
+    <div class='col-6'>
+      <div class='feature'><div>✅</div><div>
+        <h3 style='margin:8px 0'>Сроки и цены</h3>
+        <ul class='muted'>
+          <li>Фото на документы — 400 ₽, 5–10 минут, электронный вид бесплатно</li>
+          <li>Баннеры — от 1100 ₽, 2–4 часа</li>
+          <li>Распечатка — от 20 ₽/лист, сразу</li>
+          <li>Фотопечать — от 30 ₽/шт, 10 минут</li>
+          <li>Визитки/листовки — 1 день</li>
+          <li>Холст — 1–2 дня</li>
+          <li>Штампы — от 1800 ₽, от 1 часа</li>
+        </ul></div></div>
+    </div>
+    <div class='col-6'>
+      <div class='feature'><div>🛠️</div><div>
+        <h3 style='margin:8px 0'>Преимущества</h3>
+        <ul class='muted'>
+          <li>Проверим макет бесплатно</li>
+          <li>Собственное оборудование</li>
+          <li>Оплата: карта, нал, безнал<?=!empty($cfg['yukassa']['enabled']) ? ', онлайн' : ''?></li>
+          <li>Доставка по городу и РФ</li>
+          <li>Связь: телефон, WhatsApp, Telegram</li>
+          <li>Бесплатные консультации</li>
+          <li>Гарантия качества</li>
+        </ul></div></div>
+    </div>
+  </div>
+</section>
+
+<section id='how' class='wrap'>
+  <div class='row'>
+    <div class='col-6'>
+      <h2>Как оформить заказ</h2>
+      <ol class='steps'>
+        <li>Выберите услугу или рассчитайте стоимость</li>
+        <li>Загрузите макет или закажите дизайн</li>
+        <li>Подтвердите цену и срок</li>
+        <li>Заберите в точке или дождитесь доставки</li>
+      </ol>
+      <div class='divider'></div>
+      <div class='muted'>Не нашли нужное? Звоните: <a class='btn' href='tel:+79522003990'>📞 +7 (952) 200‑39‑90</a></div>
+    </div>
+    <div class='col-6'>
+      <h2>Требования к макетам</h2>
+      <ul class='steps'>
+        <li>PDF, TIFF, PNG, JPG • CMYK • 300 dpi</li>
+        <li>Вылеты 2–3 мм • Текст в кривых</li>
+        <li>Большие файлы упакуйте в ZIP/RAR</li>
+      </ul>
+      <div class='divider'></div>
+      <button class='btn btn-primary' onclick='openOrder("Быстрый расчет","")'>Получить быстрый расчет</button>
+    </div>
+  </div>
+</section>
+
+<section id='contacts' class='wrap' style='padding:24px 0 10px'>
+  <h2>Свяжитесь с нами</h2>
+  <div class='row'>
+    <div class='col-6'>
+      <div class='social-links'>
+        <a href='tg://resolve?phone=79522003990'>📱 Telegram</a>
+        <a target='_blank' href='https://wa.me/79522003990'>💚 WhatsApp</a>
+        <a href='mailto:<?=esc($cfg['email_to'])?>'>✉️ Email</a>
+        <a href='tel:+79522003990'>📞 Телефон</a>
+        <?php if(!empty($cfg['social']['vk'])): ?>
+          <a target='_blank' href='<?=esc($cfg['social']['vk'])?>'>👥 VK</a>
+        <?php endif; ?>
+        <?php if(!empty($cfg['social']['instagram'])): ?>
+          <a target='_blank' href='<?=esc($cfg['social']['instagram'])?>'>📷 Instagram</a>
+        <?php endif; ?>
+      </div>
+      <div class='divider'></div>
+      <div class='muted'>📍 Адрес: <?=esc($cfg['address'])?></div>
+      <div class='muted'>🕐 График: <?=esc(implode(' • ', $cfg['workhours']))?></div>
+      <div style='margin-top:12px'>
+        <a class='btn' target='_blank' href='https://yandex.ru/maps/?text=<?=urlencode($cfg['address'])?>'>🗺️ Открыть карту</a>
+        <button class='btn btn-primary' onclick='openCallback()'>📞 Заказать звонок</button>
+      </div>
+    </div>
+    <div class='col-6'>
+      <div class='panel' style='overflow:hidden'>
+        <div style='background:rgba(255,255,255,.75);backdrop-filter:blur(var(--glass-blur));padding:12px 14px;border-bottom:1px solid rgba(0,0,0,.08);display:flex;justify-content:space-between;align-items:center'>
+          <strong>Мы на карте</strong><span class='badge'>Красных Фортов, 49</span>
+        </div>
+        <div style='height:240px;position:relative;display:grid;place-items:center'>
+          <svg viewBox='0 0 600 240' width='100%' height='100%' xmlns='http://www.w3.org/2000/svg'>
+            <rect width='600' height='240' rx='12' fill='#f3f7ff'/>
+            <rect x='20' y='20' width='560' height='200' rx='8' fill='#ffffff' stroke='#e7edf7'/>
+            <path d='M60 80h440M60 140h440' stroke='#d9e5fb' stroke-dasharray='6 6'/>
+            <circle cx='160' cy='180' r='6' fill='<?=esc($brandCol)?>'/><text x='175' y='186' fill='#223660' font-size='12'>OZON</text>
+            <circle cx='250' cy='100' r='6' fill='<?=esc($brandCol)?>'/><text x='265' y='106' fill='#223660' font-size='12'>«Саша Суши»</text>
+            <g><rect x='360' y='120' width='160' height='60' rx='8' fill='#ffffff' stroke='#d9e5fb'/><text x='440' y='155' text-anchor='middle' fill='#0e1220' font-weight='700'>ПРИНТСС</text><circle cx='440' cy='125' r='6' fill='#ff7a00'/></g>
+          </svg>
+          <a href='https://yandex.ru/maps/?text=<?=urlencode($cfg['address'])?>' target='_blank' style='position:absolute;inset:0'></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class='footer'>
+  <div class='wrap'>
+    <div style='display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between'>
+      <div class='muted'>© <?=date('Y')?> <?=esc($cfg['brand'])?>. Все права защищены.</div>
+      <div class='muted'>Персональные данные — только для связи по заказу.</div>
+    </div>
+
+    <?php if(!empty($cfg['business']['show_payment_icons'])): ?>
+    <div class='payment-icons'>
+      <span class='muted' style='font-size:14px;font-weight:600'>Принимаем к оплате:</span>
+      <svg width='50' height='32' viewBox='0 0 50 32' xmlns='http://www.w3.org/2000/svg'>
+        <rect width='50' height='32' rx='4' fill='#1a5fb0'/>
+        <rect x='8' y='12' width='10' height='8' rx='1' fill='white'/>
+        <rect x='20' y='12' width='10' height='8' rx='1' fill='white'/>
+        <rect x='32' y='12' width='10' height='8' rx='1' fill='white'/>
+        <text x='25' y='26' text-anchor='middle' fill='white' font-size='6' font-weight='bold'>МИР</text>
+      </svg>
+
+      <svg width='50' height='32' viewBox='0 0 50 32' xmlns='http://www.w3.org/2000/svg'>
+        <rect width='50' height='32' rx='4' fill='#000'/>
+        <circle cx='18' cy='16' r='8' fill='#eb001b' opacity='0.8'/>
+        <circle cx='32' cy='16' r='8' fill='#f79e1b' opacity='0.8'/>
+        <path d='M25 10c2 2 2 4 2 6s0 4-2 6c-2-2-2-4-2-6s0-4 2-6z' fill='#ff5f00'/>
+      </svg>
+
+      <svg width='50' height='32' viewBox='0 0 50 32' xmlns='http://www.w3.org/2000/svg'>
+        <rect width='50' height='32' rx='4' fill='#1434CB'/>
+        <path d='M10 12l3 8h3l3-8h-3l-1.5 5-1.5-5h-3zm8 0l-1 8h3l1-8h-3zm6 0v8h3v-3h1l1 3h3l-1-3c1-1 1-2 1-3s-1-2-2-2h-6zm10 0l-2 8h3l.5-2h2l.5 2h3l-3-8h-4z' fill='white'/>
+      </svg>
+
+      <svg width='50' height='32' viewBox='0 0 50 32' xmlns='http://www.w3.org/2000/svg'>
+        <rect width='50' height='32' rx='4' fill='#FF6900'/>
+        <circle cx='16' cy='16' r='6' fill='white'/>
+        <circle cx='34' cy='16' r='6' fill='white'/>
+        <path d='M25 10v12l-3-3m3 0l3-3' stroke='white' stroke-width='2' fill='none'/>
+        <text x='25' y='26' text-anchor='middle' fill='white' font-size='5' font-weight='bold'>СБП</text>
+      </svg>
+
+      <?php if(!empty($cfg['yukassa']['enabled'])): ?>
+      <svg width='50' height='32' viewBox='0 0 50 32' xmlns='http://www.w3.org/2000/svg'>
+        <rect width='50' height='32' rx='4' fill='#ffdd2d'/>
+        <path d='M10 10l15 6-15 6V10zm20 2v12l-8-6 8-6z' fill='#000'/>
+        <text x='25' y='26' text-anchor='middle' fill='#000' font-size='5' font-weight='bold'>ЮКасса</text>
+      </svg>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if(!empty($cfg['business']['show_requisites'])): ?>
+    <div class='business-info'>
+      <strong><?=esc($cfg['business']['legal_name'])?></strong>
+      <div class='row'>
+        <?php if($cfg['business']['inn']): ?><div>ИНН: <?=esc($cfg['business']['inn'])?></div><?php endif; ?>
+        <?php if($cfg['business']['ogrn']): ?><div>ОГРНИП: <?=esc($cfg['business']['ogrn'])?></div><?php endif; ?>
+        <?php if($cfg['business']['bank']): ?><div>Банк: <?=esc($cfg['business']['bank'])?></div><?php endif; ?>
+        <?php if($cfg['business']['bik']): ?><div>БИК: <?=esc($cfg['business']['bik'])?></div><?php endif; ?>
+        <?php if($cfg['business']['account']): ?><div>Р/с: <?=esc($cfg['business']['account'])?></div><?php endif; ?>
+      </div>
+    </div>
+    <?php endif; ?>
+  </div>
+</footer>
+
+<!-- Плавающие кнопки -->
+<div class='floatactions'>
+  <a class='fab fab-callback' onclick='openCallback()'>📞 Обратный звонок</a>
+  <a class='fab' href='tel:+79522003990'>📱 <?=esc($cfg['phone_display'])?></a>
+  <a class='fab' target='_blank' href='https://wa.me/79522003990'>💚 WhatsApp</a>
+  <a class='fab' href='tg://resolve?phone=79522003990'>💙 Telegram</a>
+</div>
+
+<!-- Order modal -->
+<dialog id='orderModal'>
+  <form method='dialog'><div class='modal-head'><strong>Заявка на заказ</strong><button class='btn' onclick='document.getElementById("orderModal").close();return false;'>Закрыть ✕</button></div></form>
+  <div class='modal-body'>
+    <form id='orderForm' enctype='multipart/form-data'>
+      <input type='hidden' name='mode' value='order'><input type='hidden' name='calc' id='calcHidden'>
+      <div class='form-row'>
+        <div><label>Ваше имя<br><input required name='name' placeholder='Иван'></label></div>
+        <div><label>Телефон<br><input required name='phone' placeholder='+7 9..'></label></div>
+      </div>
+      <div class='form-row'>
+        <div><label>Услуга<br><input required name='service' id='orderService' placeholder='Выбрано из каталога/калькулятора'></label></div>
+        <div><label>Ориент. цена<br><input name='price' id='orderPrice' placeholder='например, 1100 ₽'></label></div>
+      </div>
+      <div><label>Комментарий<br><textarea name='comment' placeholder='Тираж, размеры, сроки...'></textarea></label></div>
+      <div style='margin:8px 0'><label>Прикрепить макет (до 100 МБ)<input type='file' name='file' style='margin-top:8px'></label></div>
+
+      <?php if(!empty($cfg['yukassa']['enabled'])): ?>
+      <div class='payment-methods'>
+        <div style='font-weight:600;margin-bottom:6px'>Способ оплаты:</div>
+        <div class='payment-option'>
+          <input type='radio' id='payment_offline' name='payment_method' value='offline' checked>
+          <label for='payment_offline'>При получении (нал/карта)</label>
+        </div>
+        <div class='payment-option'>
+          <input type='radio' id='payment_online' name='payment_method' value='online'>
+          <label for='payment_online'>Онлайн оплата (ЮКасса)</label>
+        </div>
+      </div>
+      <?php endif; ?>
+
+      <div class='divider'></div>
+      <div style='display:flex;gap:12px;flex-wrap:wrap;align-items:center'>
+        <button class='btn btn-primary' type='submit'>Отправить заявку</button>
+        <span id='formStatus' class='muted'></span>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Callback modal -->
+<dialog id='callbackModal'>
+  <form method='dialog'><div class='modal-head'><strong>Обратный звонок</strong><button class='btn' onclick='document.getElementById("callbackModal").close();return false;'>Закрыть ✕</button></div></form>
+  <div class='modal-body'>
+    <form id='callbackForm'>
+      <input type='hidden' name='mode' value='callback'>
+      <div class='form-row'>
+        <div><label>Ваше имя<br><input required name='name' placeholder='Иван'></label></div>
+        <div><label>Телефон<br><input required name='phone' placeholder='+7 9..'></label></div>
+      </div>
+      <div><label>Удобное время для звонка<br><input name='time' placeholder='например, после 15:00' type='text'></label></div>
+      <div class='muted' style='margin:12px 0;font-size:13px'>💡 Перезвоним в течение 15 минут в рабочее время. Звонок бесплатный!</div>
+      <div class='divider'></div>
+      <div style='display:flex;gap:12px;flex-wrap:wrap;align-items:center'>
+        <button class='btn btn-primary' type='submit'>Заказать звонок</button>
+        <span id='callbackStatus' class='muted'></span>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<script>
+  // ========== ОСНОВНЫЕ ФУНКЦИИ САЙТА ==========
+  function openOrder(service, price, calcText){
+    document.getElementById('orderService').value = service || '';
+    document.getElementById('orderPrice').value = price || '';
+    document.getElementById('calcHidden').value = calcText || '';
+    const m = document.getElementById('orderModal'); if (m.showModal) m.showModal(); else m.setAttribute('open','open');
+  }
+
+  function openCallback(){
+    const m = document.getElementById('callbackModal'); if (m.showModal) m.showModal(); else m.setAttribute('open','open');
+  }
+
+  function showInfo(title){
+    const info = {
+      'Фото на документы':'Фото за 5–10 минут. Электронная версия бесплатно. Стандартные форматы.',
+      'Печать документов A4/A3':'Срочная распечатка, копирование и сканирование. Ч/б и цветная печать.',
+      'Печать визиток':'Мелованная/дизайнерская бумага, ламинация, скругление.',
+      'Печать листовок':'A6/A5/A4, одно/двусторонние, тираж от 100 шт.',
+      'Печать баннеров':'ПВХ 440 г/м², люверсы, проварка. Срочно за 2–4 часа.',
+      'Печать плакатов/постеров':'A3/A2/A1, плотная бумага, сочная печать.',
+      'Печать фотографий':'10×15, 15×21, 20×30 — мат/глянец.',
+      'Печать наклеек/стикеров':'Пленка ПВХ, фигурная резка.',
+      'Печать на футболках':'DTF/термотрансфер. От 1 шт.',
+      'Печать на кружках':'Сублимация, белые и цветные кружки.',
+      'Ламинация и брошюровка':'Папки, пружина, ламинация 80–250 мкм.',
+      'Штампы/печати':'Изготовление в день заказа.',
+      'Печать на пленке':'Для витрин и авто, мат/глянец.',
+      'Проявка пленки':'Бережная обработка, быстро.',
+      'Копирование и сканирование':'Скан до A3, на e-mail/телефон.',
+      'Печать на холсте':'Натяжка на подрамник, по желанию лак.'
+    };
+    alert((title||'Услуга')+'\n\n'+(info[title]||'Подробнее уточняйте у менеджера.'));
+  }
+
+  // Обработка форм
+  document.getElementById('orderForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const st=document.getElementById('formStatus'); st.textContent='Отправляем...'; st.className='muted';
+    try{
+      const data=new FormData(e.currentTarget);
+      const res=await fetch(location.href,{method:'POST',body:data});
+      const j=await res.json();
+      st.textContent=j.message|| (j.ok?'Готово':'Ошибка');
+      st.className=j.ok?'ok':'bad';
+      if(j.ok){
+        if(j.payment && j.payment_url) {
+          window.open(j.payment_url, '_blank');
+        }
+        e.currentTarget.reset();
+        setTimeout(()=>document.getElementById('orderModal').close(),1200);
+      }
+    }catch(_){ st.textContent='Сбой сети. Попробуйте позже.'; st.className='bad'; }
+  });
+
+  document.getElementById('callbackForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const st=document.getElementById('callbackStatus'); st.textContent='Отправляем...'; st.className='muted';
+    try{
+      const data=new FormData(e.currentTarget);
+      const res=await fetch(location.href,{method:'POST',body:data});
+      const j=await res.json();
+      st.textContent=j.message|| (j.ok?'Готово':'Ошибка');
+      st.className=j.ok?'ok':'bad';
+      if(j.ok){
+        e.currentTarget.reset();
+        setTimeout(()=>document.getElementById('callbackModal').close(),1500);
+      }
+    }catch(_){ st.textContent='Сбой сети. Попробуйте позже.'; st.className='bad'; }
+  });
+
+  // ========== КАЛЬКУЛЯТОР ==========
+  const el=(s)=>document.querySelector(s);
+  const q=(h)=>{const d=document.createElement('div');d.innerHTML=h.trim();return d.firstChild;}
+  const rub=(n)=>new Intl.NumberFormat('ru-RU').format(Math.round(n))+' ₽';
+  const dynA=document.getElementById('calcDynamicA'), dynMore=document.getElementById('calcMore'), note=document.getElementById('calcNote'), out=document.getElementById('calcPrice');
+
+  function renderCalc(){
+    const t=el('#calcType').value; dynA.innerHTML=''; dynMore.innerHTML=''; note.textContent=''; out.textContent='0 ₽';
+    if(t==='cards'){
+      dynA.appendChild(q(`<label>Тираж<br><select id='cc_qty'><option>100</option><option>200</option><option>500</option><option>1000</option><option>2000</option></select></label>`));
+      dynMore.appendChild(q(`<div><label>Стороны<br><select id='cc_side'><option value='1'>1 сторона</option><option value='2'>2 стороны</option></select></label></div>`));
+      dynMore.appendChild(q(`<div><label>Бумага<br><select id='cc_paper'><option value='std'>Мелованная 300 г/м²</option><option value='prm'>Премиум</option></select></label></div>`));
+      dynMore.appendChild(q(`<div><label>Ламинация<br><select id='cc_lam'><option value='none'>Нет</option><option value='mat'>Матовая</option><option value='gloss'>Глянец</option></select></label></div>`));
+      note.textContent='Срок: 1 день. Макет PDF/JPG, 300 dpi, вылеты 2 мм.';
+    } else if(t==='flyers'){
+      dynA.appendChild(q(`<label>Формат<br><select id='fl_fmt'><option value='A6'>A6</option><option value='A5'>A5</option><option value='A4'>A4</option></select></label>`));
+      dynMore.appendChild(q(`<div><label>Тираж<br><input id='fl_qty' type='number' value='100' min='50' step='50'></label></div>`));
+      dynMore.appendChild(q(`<div><label>Стороны<br><select id='fl_side'><option value='1'>1 сторона</option><option value='2'>2 стороны</option></select></label></div>`));
+      dynMore.appendChild(q(`<div><label>Бумага<br><select id='fl_paper'><option value='130'>130 г/м²</option><option value='170'>170 г/м²</option></select></label></div>`));
+      note.textContent='Срок: 1-2 дня. Бумага офсетная/мелованная.';
+    } else if(t==='banner'){
+      dynA.appendChild(q(`<label>Ширина (м)<br><input id='bn_w' type='number' step='0.1' value='2' min='0.3'></label>`));
+      dynMore.appendChild(q(`<div><label>Высота (м)<br><input id='bn_h' type='number' step='0.1' value='1' min='0.3'></label></div>`));
+      dynMore.appendChild(q(`<div><label>Люверсы<br><select id='bn_eyes'><option value='0'>Нет</option><option value='1'>Да</option></select></label></div>`));
+      dynMore.appendChild(q(`<div><label>Проварка<br><select id='bn_weld'><option value='0'>Нет</option><option value='1'>Да</option></select></label></div>`));
+      note.textContent='Срок: 2–4 часа. ПВХ-баннер 440 г/м².';
+    } else if(t==='photo'){
+      dynA.appendChild(q(`<label>Размер<br><select id='ph_size'><option value='10x15'>10×15</option><option value='15x21'>15×21</option><option value='20x30'>20×30</option><option value='30x40'>30×40</option></select></label>`));
+      dynMore.appendChild(q(`<div><label>Тираж<br><input id='ph_qty' type='number' value='10' min='1'></label></div>`));
+      dynMore.appendChild(q(`<div><label>Бумага<br><select id='ph_paper'><option value='mat'>Матовая</option><option value='gloss'>Глянцевая</option></select></label></div>`));
+      dynMore.appendChild(q(`<div><label>Срочность<br><select id='ph_urgent'><option value='0'>Обычно (10 мин)</option><option value='1'>Срочно (+50%)</option></select></label></div>`));
+      note.textContent='Срок: 10 минут обычно, 5 минут срочно.';
+    } else if(t==='stickers'){
+      dynA.appendChild(q(`<label>Площадь (м²)<br><input id='st_area' type='number' step='0.01' value='1' min='0.01'></label>`));
+      dynMore.appendChild(q(`<div><label>Тип пленки<br><select id='st_type'><option value='white'>Белая глянец</option><option value='transparent'>Прозрачная</option><option value='matte'>Белая мат</option></select></label></div>`));
+      dynMore.appendChild(q(`<div><label>Фигурная резка<br><select id='st_cut'><option value='0'>Нет</option><option value='1'>Да (+30%)</option></select></label></div>`));
+      note.textContent='Срок: 1-2 дня. Самоклеящаяся пленка ПВХ.';
+    } else if(t==='stamps'){
+      dynA.appendChild(q(`<label>Тип штампа<br><select id='stamp_type'><option value='auto'>Автоматический</option><option value='wood'>Деревянный</option><option value='pocket'>Карманный</option></select></label>`));
+      dynMore.appendChild(q(`<div><label>Размер<br><select id='stamp_size'><option value='small'>До 30×12</option><option value='medium'>До 47×18</option><option value='large'>До 58×22</option></select></label></div>`));
+      dynMore.appendChild(q(`<div><label>Срочность<br><select id='stamp_urgent'><option value='0'>1-2 дня</option><option value='1'>В день заказа (+500₽)</option></select></label></div>`));
+      note.textContent='Изготовление штампов и печатей. Оснастки в комплекте.';
+    }
+    dynA.oninput=dynMore.oninput=calcPrice;
+    calcPrice();
+  }
+
+  function calcPrice(){
+    const t=el('#calcType').value; let price=0, text='';
+    if(t==='cards'){
+      const qty=+el('#cc_qty').value, side=+el('#cc_side').value, paper=el('#cc_paper').value, lam=el('#cc_lam').value;
+      let base=900*(qty/100);
+      if(side===2) base*=1.3;
+      if(paper==='prm') base*=1.4;
+      if(lam!=='none') base+=400*(qty/100);
+      price=base;
+      text=`Визитки ${qty} шт, ${side} стор., ${paper==='prm'?'премиум':'мелованная'}, ламинация: ${lam==='none'?'нет':lam}`;
+    }
+    if(t==='flyers'){
+      const fmt=el('#fl_fmt').value, qty=Math.max(50, +el('#fl_qty').value), side=+el('#fl_side').value, paper=el('#fl_paper').value;
+      let rate={'A6':3.5,'A5':5,'A4':8}[fmt]||5;
+      let base=rate*qty;
+      if(side===2) base*=1.6;
+      if(paper==='170') base*=1.2;
+      price=base;
+      text=`Листовки ${fmt}, ${qty} шт, ${side} стор., ${paper} г/м²`;
+    }
+    if(t==='banner'){
+      const w=Math.max(0.3,parseFloat(el('#bn_w').value||0)), h=Math.max(0.3,parseFloat(el('#bn_h').value||0));
+      const eyes=el('#bn_eyes').value==='1', weld=el('#bn_weld').value==='1';
+      const area=w*h;
+      let base=Math.max(1100, area*380);
+      if(eyes){ const per=Math.ceil((w*2+h*2)/0.5); base+=per*12; }
+      if(weld) base+=180;
+      price=base;
+      text=`Баннер ${w}×${h} м${eyes?', люверсы':''}${weld?', проварка':''}`;
+    }
+    if(t==='photo'){
+      const size=el('#ph_size').value, qty=Math.max(1,+el('#ph_qty').value), urgent=el('#ph_urgent').value==='1';
+      const rate={'10x15':30,'15x21':60,'20x30':120,'30x40':200}[size]||30;
+      let base=rate*qty;
+      if(urgent) base*=1.5;
+      price=base;
+      text=`Фото ${size}, ${qty} шт${urgent?', срочно':''}`;
+    }
+    if(t==='stickers'){
+      const area=Math.max(0.01,parseFloat(el('#st_area').value||0)), type=el('#st_type').value, cut=el('#st_cut').value==='1';
+      let rate=350;
+      if(type==='transparent') rate=420;
+      if(type==='matte') rate=380;
+      let base=area*rate;
+      if(cut) base*=1.3;
+      price=base;
+      text=`Наклейки ${area} м², ${type}${cut?', фигурная резка':''}`;
+    }
+    if(t==='stamps'){
+      const type=el('#stamp_type').value, size=el('#stamp_size').value, urgent=el('#stamp_urgent').value==='1';
+      let base={'auto':1800,'wood':1200,'pocket':2200}[type]||1800;
+      if(size==='medium') base+=300;
+      if(size==='large') base+=600;
+      if(urgent) base+=500;
+      price=base;
+      text=`Штамп ${type}, ${size}${urgent?', срочно':''}`;
+    }
+    out.textContent=rub(price);
+    document.getElementById('calcOrder').onclick=()=>openOrder('Расчёт: '+text, rub(price), text);
+    document.getElementById('calcReset').onclick=()=>renderCalc();
+  }
+
+  document.getElementById('calcType').addEventListener('change', renderCalc); renderCalc();
+</script>
+
+<script type='application/ld+json'>
+{"@context":"https://schema.org","@type":"CopyShop","name":"<?=esc($cfg['brand'])?>","description":"<?=esc($seoDescription)?>","address":{"@type":"PostalAddress","streetAddress":"ул. Красных Фортов, 49","addressLocality":"Сосновый Бор","addressCountry":"RU"},"telephone":"+79522003990","url":"<?=esc($cfg['site'])?>","openingHours":["Mo-Fr 10:00-20:00","Sa-Su 11:00-18:00"],"priceRange":"₽₽","paymentAccepted":["Cash","Credit Card"<?=!empty($cfg['yukassa']['enabled'])?',"Online Payment"':''?>]}
+</script>
+</body>
+</html>
